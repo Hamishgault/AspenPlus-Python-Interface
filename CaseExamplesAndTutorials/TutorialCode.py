@@ -1,4 +1,12 @@
 #from ast import AugAssign
+from pathlib import Path
+import sys
+
+# Ensure project root (where CodeLibrary.py lives) is on sys.path
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+        sys.path.insert(0, str(_PROJECT_ROOT))
+
 from CodeLibrary import Simulation
 
 
@@ -47,7 +55,8 @@ print("\nThe Library ran without any Syntax Error \n")
 
 #1. instanciate the class and set the aspen name, file path and visibilty
 input("To open Aspen and instanciate the Simulation Class: Press any Enter to continue  \n")
-sim = Simulation(AspenFileName= "AspenTutorial.bkp", WorkingDirectoryPath= r"c:/Users/s2371014/Desktop/AspenPythonInterface" ,VISIBILITY=True)
+_aspen_file = (Path(__file__).resolve().parent / "AspenTutorial.bkp")
+sim = Simulation(AspenFileName=str(_aspen_file), WorkingDirectoryPath=r"C:\Users\fsb21122\AspenPlus-Python-Interface", VISIBILITY=True)
 
 #Look at aspen
 print("Aspen should have opened now. Please take a look at it  \n \n")

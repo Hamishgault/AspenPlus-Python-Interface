@@ -1,0 +1,11 @@
+# Ignore everything by default
+*
+
+# Keep directories so Git can traverse
+!*/
+
+# Allow Python source files
+!*.py
+
+# Allow this ignore file
+!.gitignore
