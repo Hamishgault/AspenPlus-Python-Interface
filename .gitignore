@@ -9,3 +9,7 @@
 
 # Allow this ignore file
 !.gitignore
+
+# Allow project docs and requirements
+!requirements.txt
+!Project/README_MEOH.md
