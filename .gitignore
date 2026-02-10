@@ -7,6 +7,9 @@
 # Allow Python source files
 !*.py
 
+# Allow Markdown docs
+!*.md
+
 # Allow Excel files
 !*.xlsx
 !*.xlsm
