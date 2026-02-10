@@ -1,6 +1,20 @@
 # AspenPythonInterface
 Aspen Plus to Python interface for the automation of the process synthesis. This API can be used for most equipment inside of the Aspen Plus system. The library consists of around 5000 lines of code which are made up of many smaller functions which each are able to set or get some value in the aspen plus user interface. It is based on the automation server which aspen plus has implemented together with the variable manager. Please read the documentation report if you plan to work with it.
 
+## Installation
+Prerequisites:
+- Windows
+- Aspen Plus installed (for running Aspen simulations)
+- Python 3.9+ (64-bit recommended)
+
+Setup:
+1. Create and activate a virtual environment.
+2. Install dependencies from requirements.txt.
+
+Example (PowerShell):
+1. `python -m venv .venv`
+2. `.\.venv\Scripts\Activate.ps1`
+3. `pip install -r requirements.txt`
 
 
 Capabilities:
