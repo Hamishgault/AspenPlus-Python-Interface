@@ -16,15 +16,36 @@ import Economics_eSAF as model
 
 OUTPUT_DIR = Path(__file__).with_name("outputs") / "economics_esaf" / "monte_carlo"
 
-EE_RANGE = (0.05, 0.15)
-BRENT_RANGE = (60.0, 100.0)
-ETS1_RANGE = (50.0, 150.0)
-ETS2_RANGE = (25.0, 100.0)
-CAPEX_MULT_RANGE = (0.8, 1.2)
+EE_MULT_RANGE = (0.9, 1.1)
+BRENT_MULT_RANGE = (0.9, 1.1)
+ETS1_MULT_RANGE = (0.9, 1.1)
+ETS2_MULT_RANGE = (0.9, 1.1)
+CAPEX_MULT_RANGE = (0.9, 1.1)
+ELECTROLYZER_EFF_MULT_RANGE = (0.9, 1.1)
+STACK_LIFE_MULT_RANGE = (0.9, 1.1)
+CO2_CAPTURE_COST_MULT_RANGE = (0.9, 1.1)
+OPEX_MULT_RANGE = (0.9, 1.1)
+WACC_MULT_RANGE = (0.9, 1.1)
+PLANT_LIFE_MULT_RANGE = (0.9, 1.1)
+UTILIZATION_MULT_RANGE = (0.9, 1.1)
+H2_COMPR_MULT_RANGE = (0.9, 1.1)
 
 
 def clone_data(base: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
     return {key: np.array(value, copy=True) for key, value in base.items()}
+
+
+def sample_trunc_normal(
+    rng: np.random.Generator,
+    mean: float = 1.0,
+    sigma: float = 0.1,
+    low: float = 0.8,
+    high: float = 1.2,
+) -> float:
+    while True:
+        value = float(rng.normal(mean, sigma))
+        if low <= value <= high:
+            return value
 
 
 def set_scalar(data: Dict[str, np.ndarray], section: str, key: str, value: float) -> None:
@@ -34,6 +55,14 @@ def set_scalar(data: Dict[str, np.ndarray], section: str, key: str, value: float
         "plant": model.PLANT_IDX,
     }
     data[section][idx_map[section][key]] = value
+
+
+def set_we_value(data: Dict[str, np.ndarray], index: int, value: float) -> None:
+    data["we"][index] = value
+
+
+def set_we_matrix_value(data: Dict[str, np.ndarray], row: int, col: int, value: float) -> None:
+    data["we_matrix"][row, col] = value
 
 
 def run_monte_carlo(n_samples: int = 200, seed: int = 7, compute_bep: bool = False) -> None:
@@ -47,21 +76,102 @@ def run_monte_carlo(n_samples: int = 200, seed: int = 7, compute_bep: bool = Fal
     base_capex = model.get_scalar(base_data, "plant", "CAPEX")
     base_refuel = model.get_scalar(base_data, "real", "ReFuel")
     base_wacc = model.get_scalar(base_data, "econ", "WACC")
+    base_ee = model.get_scalar(base_data, "real", "EE")
+    base_brent = model.get_scalar(base_data, "real", "BRENT")
+    base_ets1 = model.get_scalar(base_data, "real", "ETS1")
+    base_ets2 = model.get_scalar(base_data, "real", "ETS2")
+    base_py = int(model.get_scalar(base_data, "econ", "Py"))
+    base_life_years = 2050 - base_py
+    base_cc = model.get_scalar(base_data, "real", "CC")
+    base_h2_compr = model.get_scalar(base_data, "plant", "H2_compr")
+    base_operatori = model.get_scalar(base_data, "plant", "Operatori")
+    base_overhead = model.get_scalar(base_data, "plant", "Overhead")
+    base_manutenzione = model.get_scalar(base_data, "plant", "Manutenzione")
+    base_use = float(base_data["we"][2].item())
+    base_eff = float(base_data["we_matrix"][1, 1].item())
+    base_stack_life = float(base_data["we_matrix"][3, 1].item())
 
     rows: List[Dict[str, float]] = []
 
     for _ in range(n_samples):
         data_i = clone_data(base_data)
 
-        set_scalar(data_i, "real", "EE", float(rng.uniform(*EE_RANGE)))
-        set_scalar(data_i, "real", "BRENT", float(rng.uniform(*BRENT_RANGE)))
-        set_scalar(data_i, "real", "ETS1", float(rng.uniform(*ETS1_RANGE)))
-        set_scalar(data_i, "real", "ETS2", float(rng.uniform(*ETS2_RANGE)))
-        set_scalar(data_i, "plant", "CAPEX", float(base_capex * rng.uniform(*CAPEX_MULT_RANGE)))
+        set_scalar(
+            data_i,
+            "real",
+            "EE",
+            float(base_ee * sample_trunc_normal(rng, 1.0, 0.1, *EE_MULT_RANGE)),
+        )
+        set_scalar(
+            data_i,
+            "real",
+            "BRENT",
+            float(base_brent * sample_trunc_normal(rng, 1.0, 0.1, *BRENT_MULT_RANGE)),
+        )
+        set_scalar(
+            data_i,
+            "real",
+            "ETS1",
+            float(base_ets1 * sample_trunc_normal(rng, 1.0, 0.1, *ETS1_MULT_RANGE)),
+        )
+        set_scalar(
+            data_i,
+            "real",
+            "ETS2",
+            float(base_ets2 * sample_trunc_normal(rng, 1.0, 0.1, *ETS2_MULT_RANGE)),
+        )
+        set_scalar(
+            data_i,
+            "plant",
+            "CAPEX",
+            float(base_capex * sample_trunc_normal(rng, 1.0, 0.1, *CAPEX_MULT_RANGE)),
+        )
+
+        set_scalar(
+            data_i,
+            "real",
+            "CC",
+            float(base_cc * sample_trunc_normal(rng, 1.0, 0.1, *CO2_CAPTURE_COST_MULT_RANGE)),
+        )
+        set_scalar(
+            data_i,
+            "plant",
+            "H2_compr",
+            float(base_h2_compr * sample_trunc_normal(rng, 1.0, 0.1, *H2_COMPR_MULT_RANGE)),
+        )
+
+        opex_mult = float(sample_trunc_normal(rng, 1.0, 0.1, *OPEX_MULT_RANGE))
+        set_scalar(data_i, "plant", "Operatori", base_operatori * opex_mult)
+        set_scalar(data_i, "plant", "Overhead", base_overhead * opex_mult)
+        set_scalar(data_i, "plant", "Manutenzione", base_manutenzione * opex_mult)
+
+        wacc_i = float(base_wacc * sample_trunc_normal(rng, 1.0, 0.1, *WACC_MULT_RANGE))
+        set_scalar(data_i, "econ", "WACC", wacc_i)
+
+        life_years = int(round(base_life_years * sample_trunc_normal(rng, 1.0, 0.1, *PLANT_LIFE_MULT_RANGE)))
+        life_years = max(20, life_years)
+        set_scalar(data_i, "econ", "Py", 2050 - life_years)
+
+        use_i = float(base_use * sample_trunc_normal(rng, 1.0, 0.1, *UTILIZATION_MULT_RANGE))
+        use_i = min(max(use_i, 0.0), 1.0)
+        set_we_value(data_i, 2, use_i)
+
+        set_we_matrix_value(
+            data_i,
+            1,
+            1,
+            float(base_eff * sample_trunc_normal(rng, 1.0, 0.1, *ELECTROLYZER_EFF_MULT_RANGE)),
+        )
+        set_we_matrix_value(
+            data_i,
+            3,
+            1,
+            float(base_stack_life * sample_trunc_normal(rng, 1.0, 0.1, *STACK_LIFE_MULT_RANGE)),
+        )
 
         if compute_bep:
             def objective(refuel_arr: np.ndarray) -> float:
-                return float(model_val(data_i, base_wacc, refuel_arr[0])[0])
+                return float(model_val(data_i, wacc_i, refuel_arr[0])[0])
 
             result = minimize(
                 objective,
@@ -87,6 +197,14 @@ def run_monte_carlo(n_samples: int = 200, seed: int = 7, compute_bep: bool = Fal
             "ETS2": model.get_scalar(data_i, "real", "ETS2"),
             "CAPEX": model.get_scalar(data_i, "plant", "CAPEX"),
             "ReFuel": refuel,
+            "Electrolyzer_eff": float(data_i["we_matrix"][1, 1]),
+            "Stack_life": float(data_i["we_matrix"][3, 1]),
+            "CO2_capture_cost": model.get_scalar(data_i, "real", "CC"),
+            "OPEX_mult": opex_mult,
+            "WACC": model.get_scalar(data_i, "econ", "WACC"),
+            "Plant_life": float(2050 - model.get_scalar(data_i, "econ", "Py")),
+            "Utilization": float(data_i["we"][2].item()),
+            "H2_compr_energy": model.get_scalar(data_i, "plant", "H2_compr"),
             "BEP": refuel if compute_bep else np.nan,
             "IRR": np.nan if irr is None else irr,
             "VAN": van,
@@ -108,11 +226,19 @@ def run_monte_carlo(n_samples: int = 200, seed: int = 7, compute_bep: bool = Fal
         "seed": seed,
         "compute_bep": compute_bep,
         "ranges": {
-            "EE": EE_RANGE,
-            "BRENT": BRENT_RANGE,
-            "ETS1": ETS1_RANGE,
-            "ETS2": ETS2_RANGE,
+            "EE_MULT": EE_MULT_RANGE,
+            "BRENT_MULT": BRENT_MULT_RANGE,
+            "ETS1_MULT": ETS1_MULT_RANGE,
+            "ETS2_MULT": ETS2_MULT_RANGE,
             "CAPEX_MULT": CAPEX_MULT_RANGE,
+            "ELECTROLYZER_EFF_MULT": ELECTROLYZER_EFF_MULT_RANGE,
+            "STACK_LIFE_MULT": STACK_LIFE_MULT_RANGE,
+            "CO2_CAPTURE_COST_MULT": CO2_CAPTURE_COST_MULT_RANGE,
+            "OPEX_MULT": OPEX_MULT_RANGE,
+            "WACC_MULT": WACC_MULT_RANGE,
+            "PLANT_LIFE_MULT": PLANT_LIFE_MULT_RANGE,
+            "UTILIZATION_MULT": UTILIZATION_MULT_RANGE,
+            "H2_COMPR_MULT": H2_COMPR_MULT_RANGE,
         },
         "IRR": {
             "p10": safe_percentile(df["IRR"], 10),
@@ -135,4 +261,4 @@ def run_monte_carlo(n_samples: int = 200, seed: int = 7, compute_bep: bool = Fal
 
 
 if __name__ == "__main__":
-    run_monte_carlo()
+    run_monte_carlo(n_samples=2000)

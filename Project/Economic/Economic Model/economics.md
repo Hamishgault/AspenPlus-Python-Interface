@@ -46,38 +46,6 @@ This folder is created automatically. It stores:
 5) It saves outputs and prints a short report.
 6) results_viewer.py can be run later to inspect results without recalculating.
 
-## How to add a Monte Carlo simulation (intuitive overview)
-
-A Monte Carlo simulation is just the same model run many times with slightly different inputs. The goal is to see a range of possible outcomes instead of a single number.
-
-A simple way to add it here:
-
-1) Pick a few uncertain inputs
-   - electricity price (EE)
-   - fuel price (BRENT)
-   - carbon price (ETS1/ETS2)
-   - capital cost (CAPEX)
-
-2) Decide reasonable ranges
-   - example: EE between 0.05 and 0.15
-   - example: CAPEX between 0.8x and 1.2x the base value
-
-3) Generate many random samples
-   - for each run, draw a random value for each uncertain input
-   - keep everything else fixed
-
-4) Run the model for each sample
-   - call val() with the sampled inputs
-   - store outputs like IRR, BEP, and VAN
-
-5) Summarize the results
-   - show histograms (how often each outcome happens)
-   - show percentiles (best, typical, worst cases)
-   - check which inputs drive the biggest changes
-
-This approach gives a more realistic picture: not a single "answer", but a distribution of outcomes. It is also easy to add without changing the core logic, because you can treat the model as a black box and just repeat it with different inputs.
-
-If you want, I can add a small Monte Carlo driver script that does this and saves the results into outputs/.
 
 ## Inputs: what they represent
 
