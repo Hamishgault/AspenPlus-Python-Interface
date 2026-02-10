@@ -10,8 +10,10 @@ import numpy as np
 import pandas as pd
 
 
-def _load_monte_carlo(output_dir):
+def _load_monte_carlo(output_dir, subdir=None):
     mc_dir = Path(output_dir) / "monte_carlo"
+    if subdir:
+        mc_dir = mc_dir / subdir
     summary_path = mc_dir / "summary.json"
     results_path = mc_dir / "monte_carlo_results.csv"
     if not summary_path.exists() or not results_path.exists():
@@ -91,7 +93,9 @@ def _plot_top_scatter(df, pairs, metric, top_n=3):
 
 
 def display_electrolyzer_results(output_dir, show_plot=True):
-    summary, df = _load_monte_carlo(output_dir)
+    mc_root = Path(output_dir) / "monte_carlo"
+    subdir = "normal" if (mc_root / "normal").exists() else None
+    summary, df = _load_monte_carlo(output_dir, subdir=subdir)
     if summary is None or df is None:
         raise FileNotFoundError("Missing Monte Carlo outputs in outputs/economics_esaf/monte_carlo")
 

@@ -11,8 +11,10 @@ import numpy as np
 import pandas as pd
 
 
-def _load_monte_carlo(output_dir):
+def _load_monte_carlo(output_dir, subdir=None):
     mc_dir = Path(output_dir) / "monte_carlo"
+    if subdir:
+        mc_dir = mc_dir / subdir
     summary_path = mc_dir / "summary.json"
     results_path = mc_dir / "monte_carlo_results.csv"
     if not summary_path.exists() or not results_path.exists():
@@ -97,6 +99,20 @@ def _plot_top_scatter(df, corr_pairs, metric="VAN", top_n=3):
     plt.show()
 
 
+def _plot_histogram(df, metric="VAN", label=None, bins=60000):
+    if metric not in df.columns or df[metric].notna().sum() == 0:
+        return
+    plt.figure(figsize=(5, 3.5))
+    plt.hist(df[metric].dropna(), bins=bins, color="#55a868")
+    title = f"{metric} Distribution" if label is None else f"{label} Distribution"
+    xlabel = metric if label is None else label
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel("Count")
+    plt.tight_layout()
+    plt.show()
+
+
 def _regression_sensitivity(df, metric="VAN"):
     if metric not in df.columns:
         return []
@@ -170,6 +186,40 @@ def _plot_regression_tornado(beta_pairs, metric="VAN"):
     plt.show()
 
 
+def _fit_bep_tree(df, input_cols, metric="BEP"):
+    if metric not in df.columns:
+        return None, None
+
+    data = df[input_cols + [metric]].dropna()
+    if len(data) < 10:
+        return None, None
+
+    x = data[input_cols].to_numpy(dtype=float)
+    y = data[metric].to_numpy(dtype=float)
+
+    try:
+        from sklearn.tree import DecisionTreeRegressor
+    except ImportError:
+        print("\nDecision tree analysis skipped: scikit-learn not installed.")
+        return None, None
+
+    tree = DecisionTreeRegressor(max_depth=3, random_state=7)
+    tree.fit(x, y)
+    return tree, input_cols
+
+
+def _print_tree_splits(tree, feature_names):
+    tree_ = tree.tree_
+    print("\nDecision Tree Split Thresholds")
+    for idx in range(tree_.node_count):
+        feature = tree_.feature[idx]
+        if feature == -2:
+            continue
+        name = feature_names[feature]
+        threshold = tree_.threshold[idx]
+        print(f"- {name} <= {threshold:.4f}")
+
+
 def display_results(output_dir, show_plot=True):
     output_dir = Path(output_dir)
     summary_path = output_dir / "summary.json"
@@ -210,14 +260,62 @@ def display_results(output_dir, show_plot=True):
         plt.title("Market Price")
         plt.show()
 
-    mc_summary, mc_df = _load_monte_carlo(output_dir)
-    if mc_summary is not None and mc_df is not None:
-        corr_pairs = _monte_carlo_correlations(mc_df, metric="VAN")
-        if show_plot:
-            _plot_tornado(corr_pairs, metric="VAN")
-            _plot_top_scatter(mc_df, corr_pairs, metric="VAN", top_n=3)
+    mc_root = Path(output_dir) / "monte_carlo"
+    subdirs = []
+    if (mc_root / "normal").exists():
+        subdirs.append("normal")
+    if (mc_root / "bep").exists():
+        subdirs.append("bep")
+    if not subdirs:
+        subdirs.append(None)
 
-        beta_pairs = _regression_sensitivity(mc_df, metric="VAN")
+    for subdir in subdirs:
+        mc_summary, mc_df = _load_monte_carlo(output_dir, subdir=subdir)
+        if mc_summary is None or mc_df is None:
+            continue
+
+        title_suffix = "" if subdir is None else f" ({subdir})"
+        metric = "BEP" if mc_summary.get("compute_bep") else "VAN"
+        corr_pairs = _monte_carlo_correlations(mc_df, metric=metric)
+        if show_plot:
+            hist_label = "NPV" if not mc_summary.get("compute_bep") and metric == "VAN" else None
+            _plot_histogram(mc_df, metric=metric, label=hist_label, bins=200)
+            _plot_tornado(corr_pairs, metric=f"{metric}{title_suffix}")
+            _plot_top_scatter(mc_df, corr_pairs, metric=metric, top_n=3)
+
+        if metric == "BEP":
+            input_cols = [
+                "EE",
+                "BRENT",
+                "ETS1",
+                "ETS2",
+                "CAPEX",
+                "Electrolyzer_eff",
+                "Stack_life",
+                "CO2_capture_cost",
+                "OPEX_mult",
+                "WACC",
+                "Plant_life",
+                "Utilization",
+                "H2_compr_energy",
+            ]
+            input_cols = [col for col in input_cols if col in mc_df.columns]
+            tree, tree_cols = _fit_bep_tree(mc_df, input_cols, metric="BEP")
+            if tree is not None and tree_cols is not None:
+                importances = tree.feature_importances_
+                rows = [
+                    {"Variable": name, "importance": float(val)}
+                    for name, val in zip(tree_cols, importances)
+                    if val > 0
+                ]
+                if rows:
+                    rows.sort(key=lambda item: item["importance"], reverse=True)
+                    table = pd.DataFrame(rows)
+                    print(f"\nDecision Tree Drivers (BEP{title_suffix})")
+                    print(table.to_string(index=False))
+                _print_tree_splits(tree, tree_cols)
+
+        beta_pairs = _regression_sensitivity(mc_df, metric=metric)
         if beta_pairs:
             rows = [
                 {
@@ -228,11 +326,11 @@ def display_results(output_dir, show_plot=True):
                 for name, beta in beta_pairs
             ]
             beta_table = pd.DataFrame(rows)
-            print("\nRegression-Based Sensitivity (VAN)")
+            print(f"\nRegression-Based Sensitivity ({metric}{title_suffix})")
             print(beta_table.to_string(index=False))
 
         if show_plot:
-            _plot_regression_tornado(beta_pairs, metric="VAN")
+            _plot_regression_tornado(beta_pairs, metric=f"{metric}{title_suffix}")
 
 
 if __name__ == "__main__":

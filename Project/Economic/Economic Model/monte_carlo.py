@@ -10,7 +10,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 import numpy as np
 import pandas as pd
-from scipy.optimize import minimize
+from scipy.optimize import brentq
 
 import Economics_eSAF as model
 
@@ -26,7 +26,6 @@ STACK_LIFE_MULT_RANGE = (0.9, 1.1)
 CO2_CAPTURE_COST_MULT_RANGE = (0.9, 1.1)
 OPEX_MULT_RANGE = (0.9, 1.1)
 WACC_MULT_RANGE = (0.9, 1.1)
-PLANT_LIFE_MULT_RANGE = (0.9, 1.1)
 UTILIZATION_MULT_RANGE = (0.9, 1.1)
 H2_COMPR_MULT_RANGE = (0.9, 1.1)
 
@@ -65,14 +64,59 @@ def set_we_matrix_value(data: Dict[str, np.ndarray], row: int, col: int, value: 
     data["we_matrix"][row, col] = value
 
 
-def run_monte_carlo(n_samples: int = 200, seed: int = 7, compute_bep: bool = False) -> None:
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+def solve_bep(
+    data: Dict[str, np.ndarray],
+    wacc: float,
+    model_val: Callable[..., Tuple[Any, ...]],
+    lower: float = 0.0,
+    upper: float = 10000.0,
+    max_expansions: int = 3,
+) -> Optional[float]:
+    def npv_at(price: float) -> float:
+        result = cast(Tuple[Any, ...], model_val(data, wacc, price))
+        return float(result[1])
+
+    low = float(lower)
+    high = float(upper)
+    try:
+        f_low = npv_at(low)
+        f_high = npv_at(high)
+    except Exception:
+        return None
+
+    expansions = 0
+    while np.sign(f_low) == np.sign(f_high) and expansions < max_expansions:
+        high *= 2.0
+        try:
+            f_high = npv_at(high)
+        except Exception:
+            return None
+        expansions += 1
+
+    if np.sign(f_low) == np.sign(f_high):
+        return None
+
+    try:
+        root_value, _ = brentq(lambda price: npv_at(float(price)), low, high, full_output=True)
+    except ValueError:
+        return None
+
+    return float(root_value)
+
+
+def run_monte_carlo(
+    n_samples: int = 200,
+    seed: int = 7,
+    compute_bep: bool = False,
+    output_subdir: Optional[str] = None,
+) -> None:
+    output_dir = OUTPUT_DIR if output_subdir is None else OUTPUT_DIR / output_subdir
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     rng = np.random.default_rng(seed)
 
     base_data = cast(Dict[str, np.ndarray], getattr(model, "data"))
     model_val = cast(Callable[..., Tuple[Any, ...]], getattr(model, "val"))
-    model_irr = cast(Callable[[np.ndarray], Optional[float]], getattr(model, "compute_irr"))
     base_capex = model.get_scalar(base_data, "plant", "CAPEX")
     base_refuel = model.get_scalar(base_data, "real", "ReFuel")
     base_wacc = model.get_scalar(base_data, "econ", "WACC")
@@ -80,8 +124,6 @@ def run_monte_carlo(n_samples: int = 200, seed: int = 7, compute_bep: bool = Fal
     base_brent = model.get_scalar(base_data, "real", "BRENT")
     base_ets1 = model.get_scalar(base_data, "real", "ETS1")
     base_ets2 = model.get_scalar(base_data, "real", "ETS2")
-    base_py = int(model.get_scalar(base_data, "econ", "Py"))
-    base_life_years = 2050 - base_py
     base_cc = model.get_scalar(base_data, "real", "CC")
     base_h2_compr = model.get_scalar(base_data, "plant", "H2_compr")
     base_operatori = model.get_scalar(base_data, "plant", "Operatori")
@@ -148,10 +190,6 @@ def run_monte_carlo(n_samples: int = 200, seed: int = 7, compute_bep: bool = Fal
         wacc_i = float(base_wacc * sample_trunc_normal(rng, 1.0, 0.1, *WACC_MULT_RANGE))
         set_scalar(data_i, "econ", "WACC", wacc_i)
 
-        life_years = int(round(base_life_years * sample_trunc_normal(rng, 1.0, 0.1, *PLANT_LIFE_MULT_RANGE)))
-        life_years = max(20, life_years)
-        set_scalar(data_i, "econ", "Py", 2050 - life_years)
-
         use_i = float(base_use * sample_trunc_normal(rng, 1.0, 0.1, *UTILIZATION_MULT_RANGE))
         use_i = min(max(use_i, 0.0), 1.0)
         set_we_value(data_i, 2, use_i)
@@ -170,25 +208,22 @@ def run_monte_carlo(n_samples: int = 200, seed: int = 7, compute_bep: bool = Fal
         )
 
         if compute_bep:
-            def objective(refuel_arr: np.ndarray) -> float:
-                return float(model_val(data_i, wacc_i, refuel_arr[0])[0])
-
-            result = minimize(
-                objective,
-                x0=[base_refuel],
-                method="L-BFGS-B",
-                bounds=[(0, 10000)],
-            )
-            refuel = float(result.x[0])
+            refuel = solve_bep(data_i, wacc_i, model_val)
+            van = np.nan
+            irr = None
+            lcoh = np.array([np.nan])
+            err = np.nan
         else:
             refuel = float(base_refuel)
+            result = cast(Tuple[Any, ...], model_val(data_i, ReFuel=refuel))
+            err = float(result[0])
+            van = float(result[1])
+            lcoh = np.asarray(result[5], dtype=float)
+            cash_flows = np.asarray(result[7], dtype=float)
+            model_irr = cast(Callable[[np.ndarray], Optional[float]], getattr(model, "compute_irr"))
+            irr = model_irr(cash_flows)
 
-        result = cast(Tuple[Any, ...], model_val(data_i, ReFuel=refuel))
-        err = float(result[0])
-        van = float(result[1])
-        lcoh = np.asarray(result[5], dtype=float)
-        cash_flows = np.asarray(result[7], dtype=float)
-        irr = model_irr(cash_flows)
+        refuel_value = float(refuel) if refuel is not None else float("nan")
 
         rows.append({
             "EE": model.get_scalar(data_i, "real", "EE"),
@@ -196,16 +231,15 @@ def run_monte_carlo(n_samples: int = 200, seed: int = 7, compute_bep: bool = Fal
             "ETS1": model.get_scalar(data_i, "real", "ETS1"),
             "ETS2": model.get_scalar(data_i, "real", "ETS2"),
             "CAPEX": model.get_scalar(data_i, "plant", "CAPEX"),
-            "ReFuel": refuel,
+            "ReFuel": np.nan if compute_bep else refuel_value,
             "Electrolyzer_eff": float(data_i["we_matrix"][1, 1]),
             "Stack_life": float(data_i["we_matrix"][3, 1]),
             "CO2_capture_cost": model.get_scalar(data_i, "real", "CC"),
             "OPEX_mult": opex_mult,
             "WACC": model.get_scalar(data_i, "econ", "WACC"),
-            "Plant_life": float(2050 - model.get_scalar(data_i, "econ", "Py")),
             "Utilization": float(data_i["we"][2].item()),
             "H2_compr_energy": model.get_scalar(data_i, "plant", "H2_compr"),
-            "BEP": refuel if compute_bep else np.nan,
+            "BEP": refuel_value if compute_bep else np.nan,
             "IRR": np.nan if irr is None else irr,
             "VAN": van,
             "err": err,
@@ -213,7 +247,7 @@ def run_monte_carlo(n_samples: int = 200, seed: int = 7, compute_bep: bool = Fal
         })
 
     df = pd.DataFrame(rows)
-    df.to_csv(OUTPUT_DIR / "monte_carlo_results.csv", index=False)
+    df.to_csv(output_dir / "monte_carlo_results.csv", index=False)
 
     def safe_percentile(series: pd.Series, q: int) -> Optional[float]:
         arr = np.asarray(series, dtype=float)
@@ -236,16 +270,15 @@ def run_monte_carlo(n_samples: int = 200, seed: int = 7, compute_bep: bool = Fal
             "CO2_CAPTURE_COST_MULT": CO2_CAPTURE_COST_MULT_RANGE,
             "OPEX_MULT": OPEX_MULT_RANGE,
             "WACC_MULT": WACC_MULT_RANGE,
-            "PLANT_LIFE_MULT": PLANT_LIFE_MULT_RANGE,
             "UTILIZATION_MULT": UTILIZATION_MULT_RANGE,
             "H2_COMPR_MULT": H2_COMPR_MULT_RANGE,
         },
-        "IRR": {
+        "IRR": None if compute_bep else {
             "p10": safe_percentile(df["IRR"], 10),
             "p50": safe_percentile(df["IRR"], 50),
             "p90": safe_percentile(df["IRR"], 90),
         },
-        "VAN": {
+        "VAN": None if compute_bep else {
             "p10": safe_percentile(df["VAN"], 10),
             "p50": safe_percentile(df["VAN"], 50),
             "p90": safe_percentile(df["VAN"], 90),
@@ -255,10 +288,13 @@ def run_monte_carlo(n_samples: int = 200, seed: int = 7, compute_bep: bool = Fal
             "p50": safe_percentile(df["BEP"], 50),
             "p90": safe_percentile(df["BEP"], 90),
         },
+        "sensitivity": {} if compute_bep else None,
+        "plots": {} if compute_bep else None,
     }
 
-    (OUTPUT_DIR / "summary.json").write_text(json.dumps(summary, indent=2))
+    (output_dir / "summary.json").write_text(json.dumps(summary, indent=2))
 
 
 if __name__ == "__main__":
-    run_monte_carlo(n_samples=2000)
+    run_monte_carlo(n_samples=2000, seed=7, compute_bep=False, output_subdir="normal")
+    run_monte_carlo(n_samples=2000, seed=7, compute_bep=True, output_subdir="bep")
