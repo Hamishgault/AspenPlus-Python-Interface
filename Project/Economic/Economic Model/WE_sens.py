@@ -1,17 +1,19 @@
-import pandas as pd 
+from pathlib import Path
+
+import pandas as pd
 import numpy as np
 from we_function import WE
 import matplotlib.pyplot as plt
 
-fileName="Economics eSAF.xlsx"
+fileName = str(Path(__file__).with_name("Economics eSAF.xlsx"))
 
-data={ 
-      "econ"  : pd.read_excel(fileName,'eSAF Matlab',usecols='C',skiprows=1,nrows=11).to_numpy(),
-      "real"  : pd.read_excel(fileName,'eSAF Matlab',usecols='F',skiprows=1,nrows=17).to_numpy(),
-      "plant" : pd.read_excel(fileName,'eSAF Matlab',usecols='J',skiprows=1,nrows=20).to_numpy(),
-      "we_matrix" : pd.read_excel(fileName,'Electrolyzer',usecols='J:L',skiprows=3,nrows=6).to_numpy(),
-      "we" : pd.read_excel(fileName,'Electrolyzer',usecols='C',skiprows=3,nrows=3).to_numpy(),
-      "we_type" : str(pd.read_excel(fileName,'Electrolyzer',usecols='C',skiprows=12,nrows=1))}
+data={
+    "econ"  : pd.read_excel(fileName,'eSAF Matlab',usecols='C',skiprows=1,nrows=11).to_numpy(copy=True),
+    "real"  : pd.read_excel(fileName,'eSAF Matlab',usecols='F',skiprows=1,nrows=17).to_numpy(copy=True),
+    "plant" : pd.read_excel(fileName,'eSAF Matlab',usecols='J',skiprows=1,nrows=20).to_numpy(copy=True),
+    "we_matrix" : pd.read_excel(fileName,'Electrolyzer',usecols='J:L',skiprows=3,nrows=6).to_numpy(copy=True),
+    "we" : pd.read_excel(fileName,'Electrolyzer',usecols='C',skiprows=3,nrows=3).to_numpy(copy=True),
+    "we_type" : str(pd.read_excel(fileName,'Electrolyzer',usecols='C',skiprows=12,nrows=1))}
 
 EE=np.linspace(0, 0.200,1001)
 WH=np.linspace(1000, 8700,1001)
