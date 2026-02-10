@@ -7,6 +7,11 @@
 # Allow Python source files
 !*.py
 
+# Allow Excel files
+!*.xlsx
+!*.xlsm
+!*.xls
+
 # Allow this ignore file
 !.gitignore
 
