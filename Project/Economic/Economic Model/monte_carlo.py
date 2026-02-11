@@ -134,8 +134,10 @@ def run_monte_carlo(
     base_stack_life = float(base_data["we_matrix"][3, 1].item())
 
     rows: List[Dict[str, float]] = []
+    progress_step = max(1, n_samples // 10)
+    next_progress = progress_step
 
-    for _ in range(n_samples):
+    for idx in range(n_samples):
         data_i = clone_data(base_data)
 
         set_scalar(
@@ -246,6 +248,11 @@ def run_monte_carlo(
             "LCOH_total": float(lcoh[-1]),
         })
 
+        if (idx + 1) == next_progress or (idx + 1) == n_samples:
+            percent = int(round((idx + 1) / n_samples * 100))
+            print(f"Progress: {percent}% ({idx + 1}/{n_samples})")
+            next_progress += progress_step
+
     df = pd.DataFrame(rows)
     df.to_csv(output_dir / "monte_carlo_results.csv", index=False)
 
@@ -295,6 +302,25 @@ def run_monte_carlo(
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2))
 
 
+def _prompt_samples(default_samples: int, label: str) -> int:
+    raw = input(f"{label} [{default_samples}]: ").strip()
+    if raw == "":
+        return default_samples
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ValueError("Number of samples must be an integer.")
+    if value <= 0:
+        raise ValueError("Number of samples must be positive.")
+    return value
+
+
 if __name__ == "__main__":
-    run_monte_carlo(n_samples=2000, seed=7, compute_bep=False, output_subdir="normal")
-    run_monte_carlo(n_samples=2000, seed=7, compute_bep=True, output_subdir="bep")
+    default_samples = 20000
+    default_bep_samples = 2000
+    n_samples = _prompt_samples(default_samples, "Number of samples (normal)")
+    bep_samples = _prompt_samples(default_bep_samples, "Number of samples (BEP)")
+    print("Press Enter to start...")
+    input()
+    run_monte_carlo(n_samples=n_samples, seed=6, compute_bep=False, output_subdir="normal")
+    run_monte_carlo(n_samples=bep_samples, seed=6, compute_bep=True, output_subdir="bep")

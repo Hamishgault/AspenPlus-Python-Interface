@@ -46,6 +46,68 @@ This folder is created automatically. It stores:
 5) It saves outputs and prints a short report.
 6) results_viewer.py can be run later to inspect results without recalculating.
 
+## How to use it (quick guide)
+
+### 1 Base TEA run
+Run the main model to generate a single deterministic case:
+
+```bash
+python Project/Economic/Economic\ Model/Economics_eSAF.py
+```
+
+This creates outputs in:
+```
+Project/Economic/Economic Model/outputs/economics_esaf/
+```
+
+### 2 Monte Carlo runs (normal + BEP)
+Run the Monte Carlo script to generate two result sets:
+
+```bash
+python Project/Economic/Economic\ Model/monte_carlo.py
+```
+
+Outputs are saved separately:
+```
+outputs/economics_esaf/monte_carlo/normal/
+outputs/economics_esaf/monte_carlo/bep/
+```
+
+Normal mode reports VAN/IRR distributions. BEP mode solves for the break-even ReFuel price (NPV=0) and reports BEP distributions.
+
+### 3 View results
+- Base TEA + Monte Carlo overview:
+```bash
+python Project/Economic/Economic\ Model/results_viewer.py
+```
+
+- Electrolyzer-focused view (LCOH sensitivity):
+```bash
+python Project/Economic/Economic\ Model/electrolyzer_viewer.py
+```
+
+## What you get out of it
+
+### Base TEA outputs
+- results_table.csv / results_table.xlsx: Full yearly cash-flow table.
+- arrays.npz: Compact arrays for plotting or reuse.
+- summary.json: Key metrics and inputs.
+- market_price.png: Product price decomposition plot.
+
+### Monte Carlo outputs
+Each Monte Carlo run produces:
+- monte_carlo_results.csv: One row per sample (inputs + outputs).
+- summary.json: Percentiles and run metadata.
+
+Normal mode contains VAN/IRR/NPV outputs; BEP mode contains BEP outputs only.
+
+### Viewers
+- results_viewer.py shows:
+   - Base TEA summary,
+   - MC histograms, tornado plots, scatter plots,
+   - Regression-based sensitivity (standardized betas).
+- electrolyzer_viewer.py focuses on LCOH sensitivity using electrolyzer-related inputs.
+
 
 ## Inputs: what they represent
 

@@ -15,6 +15,19 @@ def display_monte_carlo_results(output_dir, show_plot=True):
     summary_path = output_dir / "summary.json"
     results_path = output_dir / "monte_carlo_results.csv"
 
+    if not summary_path.exists() or not results_path.exists():
+        preferred = ["normal", "bep"]
+        candidates = []
+        for name in preferred:
+            candidate = output_dir / name
+            if (candidate / "summary.json").exists() and (candidate / "monte_carlo_results.csv").exists():
+                candidates.append(candidate)
+        if candidates:
+            output_dir = candidates[0]
+            summary_path = output_dir / "summary.json"
+            results_path = output_dir / "monte_carlo_results.csv"
+            print(f"Using Monte Carlo output at: {output_dir}")
+
     if not summary_path.exists():
         raise FileNotFoundError(f"Missing summary.json in {output_dir}")
     if not results_path.exists():
@@ -57,5 +70,5 @@ def display_monte_carlo_results(output_dir, show_plot=True):
 
 
 if __name__ == "__main__":
-    default_dir = Path(__file__).with_name("outputs") / "economics_esaf" / "monte_carlo"
+    default_dir = Path(__file__).with_name("outputs") / "economics_esaf" / "monte_carlo" / "normal"
     display_monte_carlo_results(default_dir, show_plot=True)
