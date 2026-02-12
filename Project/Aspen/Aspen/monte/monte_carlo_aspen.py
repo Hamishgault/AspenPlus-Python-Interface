@@ -126,12 +126,21 @@ def _get_products(sim: Simulation, nap_node: str, ker_node: str) -> Tuple[float,
 def run_monte_carlo(cfg: MonteConfig) -> list[Dict[str, object]]:
     results: list[Dict[str, object]] = []
 
-    workdir = Path(__file__).resolve().parent
-    bkp_path = workdir / cfg.bkp_name
+    # locate the Aspen .bkp in the parent Aspen folder (script lives in monte/)
+    script_dir = Path(__file__).resolve().parent
+    project_aspen_dir = script_dir.parent  # Project/Aspen/Aspen
+
+    # allow absolute path or repo-relative path
+    candidate = Path(cfg.bkp_name)
+    if candidate.is_file():
+        bkp_path = candidate
+    else:
+        bkp_path = project_aspen_dir / cfg.bkp_name
+
     if not bkp_path.exists():
         raise FileNotFoundError(f"Aspen .bkp not found: {bkp_path}")
 
-    sim = Simulation(AspenFileName=str(bkp_path), WorkingDirectoryPath=str(workdir), VISIBILITY=cfg.visibility)
+    sim = Simulation(AspenFileName=str(bkp_path), WorkingDirectoryPath=str(project_aspen_dir), VISIBILITY=cfg.visibility)
 
     # initial run to read baseline CO2/H2
     sim.EngineRun()
