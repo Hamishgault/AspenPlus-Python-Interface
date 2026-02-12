@@ -15,6 +15,9 @@
 !*.xlsm
 !*.xls
 
+# Allow CSV files
+!*.csv
+
 # Allow this ignore file
 !.gitignore
 
