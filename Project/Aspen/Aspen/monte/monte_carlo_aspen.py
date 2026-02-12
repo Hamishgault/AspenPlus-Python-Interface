@@ -192,8 +192,8 @@ def run_monte_carlo(cfg: MonteConfig) -> list[Dict[str, object]]:
 
         results.append({"run": i, "ratio": ratio, "co2": co2_flow, "h2": h2_flow, "naphtha": nap, "kero": ker, "status": "ok", "time": timestamp})
 
-    # write results CSV
-    out_path = workdir / cfg.results_csv
+    # write results CSV (place in parent Aspen folder)
+    out_path = project_aspen_dir / cfg.results_csv
     with out_path.open("w", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=["run", "ratio", "co2", "h2", "naphtha", "kero", "status", "time"])
         writer.writeheader()
