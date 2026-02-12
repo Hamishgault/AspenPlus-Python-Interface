@@ -12,12 +12,20 @@ Default test: N=3 (quick smoke test)
 """
 from __future__ import annotations
 
+import os
+import sys
 import csv
 import random
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Tuple, cast
+
+# ensure repo root on sys.path so `from CodeLibrary import Simulation` works
+WORKDIR = Path(__file__).resolve().parent
+REPO_ROOT = os.path.abspath(os.path.join(WORKDIR, "..", "..", ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
 from CodeLibrary import Simulation
 from hydrocracking_v2 import update_hydrocracking_streams_v2
