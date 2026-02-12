@@ -48,6 +48,15 @@ def main() -> int:
         print(f"    Error: {exc}")
         return 1
     
+    # Ensure Aspen has run once so stream outputs exist
+    print("\n[1b] Running Aspen engine...")
+    try:
+        sim.EngineRun()
+        print("    ✅ Aspen engine run complete")
+    except Exception as exc:
+        print("    ⚠️  Aspen engine run failed (continuing)")
+        print(f"    Error: {exc}")
+    
     # Check inlet stream exists
     print("\n[2] Checking inlet stream '5-IN-EXC'...")
     try:
@@ -67,6 +76,16 @@ def main() -> int:
     except Exception as exc:
         print(f"    ❌ Stream not found or error reading")
         print(f"    Error: {exc}")
+        try:
+            stream_names = []
+            for stream in sim.STRM.Elements:
+                stream_names.append(stream.Name)
+            if stream_names:
+                preview = ", ".join(sorted(stream_names)[:20])
+                print("    Available streams (first 20):")
+                print(f"    {preview}")
+        except Exception:
+            print("    Unable to list streams via COM interface")
         return 1
     
     # Run hydrocracking calculations
