@@ -64,6 +64,36 @@ except ModuleNotFoundError:
     from hydrocracking_v2 import update_hydrocracking_streams_v2
 
 
+# --- Monte input ranges / base-case values (copy-friendly constants) -------
+# CO2 / H2 feed baselines (units: kmol/hr)
+CO2_BASE = 38.0
+H2_BASE = 114.820896
+
+# Sampling ranges (multiplier or absolute depending on feed_mode)
+CO2_MULT_RANGE = (0.9, 1.1)         # multiplier range when using multiplier sampling
+CO2_ABS_RANGE = (34.2, 41.8)        # absolute-range equivalent (±10%)
+
+# Monte sampling defaults
+MONTE_DEFAULT_SAMPLES = 200
+MONTE_DEFAULT_SEED = 7
+
+# Ratio sampling (used when feed_mode == 'preserve_total')
+RATIO_MEAN = 1.0
+RATIO_STD = 0.1
+
+# Output / logging defaults
+MONTE_RESULTS_CSV = "monte_results.csv"
+MONTE_DEBUG_DIR = "monte_debug"
+
+# Aspen stream identifiers (keep in sync with MonteConfig)
+STREAM_CO2_NODE = "Application.Tree.Data.Streams.1-CO2-MU"
+STREAM_H2_NODE = "Application.Tree.Data.Streams.1-H2-MU"
+STREAM_INLET = "5-IN-EXC"
+STREAM_OUTLET = "5-OUTEXC"
+STREAM_NAPHTA = "Application.Tree.Data.Streams.9-NAPHTA"
+STREAM_KERO = "Application.Tree.Data.Streams.9-KERO"
+
+
 @dataclass
 class MonteConfig:
     bkp_name: str = "FTS Alessio_CO_conv_Ref_20bar_11%.bkp"
