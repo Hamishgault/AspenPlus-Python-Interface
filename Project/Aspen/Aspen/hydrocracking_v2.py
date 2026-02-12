@@ -268,14 +268,17 @@ def update_hydrocracking_streams_v2(
     # Final outlet is from the last stage (secondary)
     outlet_flows: Dict[str, float] = {}
     total_flow = 0.0
+    total_flow_set = 0.0
     missing_components: list[str] = []
     invalid_components: list[str] = []
 
     def set_component_flow(stream: str, comp_name: str, flow: float) -> None:
         try:
             sim.STRM_Set_ComponentFlowRate(stream, flow, comp_name)
+            return True
         except Exception:
             missing_components.append(comp_name)
+            return False
     
     for i, comp in enumerate(primary_comps):
         out_flow = float(secondary_outlet[i])
@@ -284,7 +287,8 @@ def update_hydrocracking_streams_v2(
             out_flow = max(out_flow, 0.0) if np.isfinite(out_flow) else 0.0
         outlet_flows[comp.name] = out_flow
         total_flow += out_flow
-        set_component_flow(outlet_stream, comp.name, out_flow)
+        if set_component_flow(outlet_stream, comp.name, out_flow):
+            total_flow_set += out_flow
     
     # Add pass-through components (not in reaction sheets)
     for name in inlet_flows:
@@ -295,14 +299,16 @@ def update_hydrocracking_streams_v2(
                 flow = max(flow, 0.0) if np.isfinite(flow) else 0.0
             outlet_flows[name] = flow
             total_flow += flow
-            set_component_flow(outlet_stream, name, flow)
+            if set_component_flow(outlet_stream, name, flow):
+                total_flow_set += flow
     
     # Set total flow
-    try:
-        sim.STRM_Set_TotalFlowRate(outlet_stream, total_flow)
-    except Exception as exc:
-        print("    ⚠️  Failed to set total outlet flow")
-        print(f"    Error: {exc}")
+    if total_flow_set > 0.0:
+        try:
+            sim.STRM_Set_TotalFlowRate(outlet_stream, total_flow_set)
+        except Exception as exc:
+            print("    ⚠️  Failed to set total outlet flow")
+            print(f"    Error: {exc}")
 
     if invalid_components:
         invalid_list = ", ".join(sorted(set(invalid_components)))
