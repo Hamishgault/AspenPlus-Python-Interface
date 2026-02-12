@@ -37,9 +37,6 @@ class MonteConfig:
     kero_node: str = "Application.Tree.Data.Streams.9-KERO"
     results_csv: str = "monte_results.csv"
     visibility: bool = False
-    # Optional overrides for baseline flows (use these instead of reading from Aspen)
-    co2_base: float | None = None
-    h2_base: float | None = None
 
 
 # --- low-level COM helpers -------------------------------------------------
@@ -95,17 +92,12 @@ def run_monte_carlo(cfg: MonteConfig) -> list[Dict[str, object]]:
 
     sim = Simulation(AspenFileName=str(bkp_path), WorkingDirectoryPath=str(workdir), VISIBILITY=cfg.visibility)
 
-    # determine baseline CO2/H2 (allow overrides in config)
-    if cfg.co2_base is not None and cfg.h2_base is not None:
-        co2_base = float(cfg.co2_base)
-        h2_base = float(cfg.h2_base)
-    else:
-        # initial run to read baseline CO2/H2 from Aspen
-        sim.EngineRun()
-        co2_base = _get_comp_flow(sim, cfg.co2_node, "CO2")
-        h2_base = _get_comp_flow(sim, cfg.h2_node, "H2")
-        if co2_base is None or h2_base is None:
-            raise RuntimeError("Failed to read baseline CO2/H2 from model streams")
+    # initial run to read baseline CO2/H2
+    sim.EngineRun()
+    co2_base = _get_comp_flow(sim, cfg.co2_node, "CO2")
+    h2_base = _get_comp_flow(sim, cfg.h2_node, "H2")
+    if co2_base is None or h2_base is None:
+        raise RuntimeError("Failed to read baseline CO2/H2 from model streams")
 
     baseline_total = float(co2_base) + float(h2_base)
 
@@ -162,8 +154,7 @@ def run_monte_carlo(cfg: MonteConfig) -> list[Dict[str, object]]:
 
 
 if __name__ == "__main__":
-    # Use the baseline values you provided for a smoke test
-    cfg = MonteConfig(samples=3, ratio_mean=1.0, ratio_std=0.1, co2_base=38.0, h2_base=114.8)
+    cfg = MonteConfig(samples=3, ratio_mean=1.0, ratio_std=0.1)
     out = run_monte_carlo(cfg)
     for row in out:
         print(row)
