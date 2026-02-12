@@ -268,12 +268,19 @@ def update_hydrocracking_streams_v2(
     # Final outlet is from the last stage (secondary)
     outlet_flows: Dict[str, float] = {}
     total_flow = 0.0
+    missing_components: list[str] = []
+
+    def set_component_flow(stream: str, comp_name: str, flow: float) -> None:
+        try:
+            sim.STRM_Set_ComponentFlowRate(stream, flow, comp_name)
+        except Exception:
+            missing_components.append(comp_name)
     
     for i, comp in enumerate(primary_comps):
         out_flow = float(secondary_outlet[i])
         outlet_flows[comp.name] = out_flow
         total_flow += out_flow
-        sim.STRM_Set_ComponentFlowRate(outlet_stream, out_flow, comp.name)
+        set_component_flow(outlet_stream, comp.name, out_flow)
     
     # Add pass-through components (not in reaction sheets)
     for name in inlet_flows:
@@ -281,9 +288,16 @@ def update_hydrocracking_streams_v2(
             flow = inlet_flows[name]
             outlet_flows[name] = flow
             total_flow += flow
-            sim.STRM_Set_ComponentFlowRate(outlet_stream, flow, name)
+            set_component_flow(outlet_stream, name, flow)
     
     # Set total flow
     sim.STRM_Set_TotalFlowRate(outlet_stream, total_flow)
+
+    if missing_components:
+        missing_list = ", ".join(sorted(set(missing_components)))
+        print(
+            "    ⚠️  Skipped components not present in outlet stream: "
+            f"{missing_list}"
+        )
     
     return outlet_flows
