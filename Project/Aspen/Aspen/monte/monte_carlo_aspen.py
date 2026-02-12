@@ -68,8 +68,18 @@ except ModuleNotFoundError:
 class MonteConfig:
     bkp_name: str = "FTS Alessio_CO_conv_Ref_20bar_11%.bkp"
     samples: int = 3
-    ratio_mean: float = 1.0  # CO2/H2
+    # Interpretation of the sampled value depends on `feed_mode`:
+    # - 'preserve_total'  (legacy): `ratio` is CO2/H2 and CO2+H2 baseline total is preserved
+    # - 'fix_h2' (recommended): H2 is fixed at the baseline; `ratio` becomes a multiplier on CO2 base
+    # - 'fix_co2'           : CO2 is fixed at the baseline; `ratio` becomes a multiplier on H2 base
+    ratio_mean: float = 1.0
     ratio_std: float = 0.1
+    feed_mode: str = "fix_h2"  # one of: 'preserve_total', 'fix_h2', 'fix_co2'
+
+    # Optional explicit baseline overrides (if provided, they replace values read from Aspen)
+    co2_base_override: float | None = None
+    h2_base_override: float | None = None
+
     co2_node: str = "Application.Tree.Data.Streams.1-CO2-MU"
     h2_node: str = "Application.Tree.Data.Streams.1-H2-MU"
     inlet_stream: str = "5-IN-EXC"
@@ -168,21 +178,42 @@ def run_monte_carlo(cfg: MonteConfig) -> list[Dict[str, object]]:
     if co2_base is None or h2_base is None:
         raise RuntimeError("Failed to read baseline CO2/H2 from model streams")
 
+    # apply optional baseline overrides (allow user to force specific base-case flows)
+    co2_base = float(cfg.co2_base_override) if cfg.co2_base_override is not None else float(co2_base)
+    h2_base = float(cfg.h2_base_override) if cfg.h2_base_override is not None else float(h2_base)
     baseline_total = float(co2_base) + float(h2_base)
 
-    for i in range(cfg.samples):
-        # sample ratio (positive)
-        ratio = -1.0
-        attempts = 0
-        while ratio <= 0 and attempts < 10:
-            ratio = random.normalvariate(cfg.ratio_mean, cfg.ratio_std)
-            attempts += 1
-        if ratio <= 0:
-            ratio = max(1e-6, cfg.ratio_mean)
+    print(f"Baseline feeds read: CO2={co2_base:.6f} kmol/hr, H2={h2_base:.6f} kmol/hr -- feed_mode={cfg.feed_mode}")
 
-        # compute component flows preserving baseline total: CO2/H2 = ratio
-        h2_flow = baseline_total / (1.0 + ratio)
-        co2_flow = baseline_total - h2_flow
+    for i in range(cfg.samples):
+        # sample a positive multiplier/value (re-interpretation depends on feed_mode)
+        sample = -1.0
+        attempts = 0
+        while sample <= 0 and attempts < 10:
+            sample = random.normalvariate(cfg.ratio_mean, cfg.ratio_std)
+            attempts += 1
+        if sample <= 0:
+            sample = max(1e-6, cfg.ratio_mean)
+
+        if cfg.feed_mode == "preserve_total":
+            # legacy behavior: `sample` is CO2/H2 ratio and CO2+H2 total is preserved
+            ratio = sample
+            h2_flow = baseline_total / (1.0 + ratio)
+            co2_flow = baseline_total - h2_flow
+        elif cfg.feed_mode == "fix_h2":
+            # keep H2 fixed at baseline; `sample` is a multiplier applied to CO2 base
+            multiplier = sample
+            h2_flow = float(h2_base)
+            co2_flow = float(co2_base) * multiplier
+            ratio = co2_flow / h2_flow if h2_flow != 0 else float("inf")
+        elif cfg.feed_mode == "fix_co2":
+            # keep CO2 fixed at baseline; `sample` is a multiplier applied to H2 base
+            multiplier = sample
+            co2_flow = float(co2_base)
+            h2_flow = float(h2_base) * multiplier
+            ratio = co2_flow / h2_flow if h2_flow != 0 else float("inf")
+        else:
+            raise ValueError(f"Unknown feed_mode: {cfg.feed_mode}")
 
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -280,7 +311,15 @@ def run_monte_carlo(cfg: MonteConfig) -> list[Dict[str, object]]:
 
 
 if __name__ == "__main__":
-    cfg = MonteConfig(samples=3, ratio_mean=1.0, ratio_std=0.1)
+    # Default smoke test: keep H2 fixed at the user's baseline and vary CO2 around 38
+    cfg = MonteConfig(
+        samples=3,
+        ratio_mean=1.0,
+        ratio_std=0.1,
+        feed_mode="fix_h2",
+        co2_base_override=38.0,
+        h2_base_override=114.820896,
+    )
     out = run_monte_carlo(cfg)
     for row in out:
         print(row)
