@@ -272,14 +272,31 @@ def update_hydrocracking_streams_v2(
     missing_components: list[str] = []
     invalid_components: list[str] = []
 
-    def set_component_flow(stream: str, comp_name: str, flow: float) -> None:
+    # Read the outlet stream's component list once so we only attempt writes
+    outlet_available_names: set[str] = set()
+    try:
+        out_outputs = sim.STRM_GET_OUTPUTS(outlet_stream)
+        names_out_raw = out_outputs.get("CompoundNameList", [])
+        if isinstance(names_out_raw, (list, tuple)):
+            outlet_available_names = {str(n).strip().upper() for n in names_out_raw}
+        elif names_out_raw:
+            outlet_available_names = {str(names_out_raw).strip().upper()}
+    except Exception:
+        # If we can't read the outlet's component list, fall back to best-effort writes
+        outlet_available_names = set()
+
+    def set_component_flow_if_present(stream: str, comp_name: str, flow: float) -> bool:
+        """Set component flow only if component exists in the outlet stream; record missing otherwise."""
+        if outlet_available_names and comp_name.strip().upper() not in outlet_available_names:
+            missing_components.append(comp_name)
+            return False
         try:
             sim.STRM_Set_ComponentFlowRate(stream, flow, comp_name)
             return True
         except Exception:
             missing_components.append(comp_name)
             return False
-    
+
     for i, comp in enumerate(primary_comps):
         out_flow = float(secondary_outlet[i])
         if not np.isfinite(out_flow) or out_flow < 0.0:
@@ -287,9 +304,9 @@ def update_hydrocracking_streams_v2(
             out_flow = max(out_flow, 0.0) if np.isfinite(out_flow) else 0.0
         outlet_flows[comp.name] = out_flow
         total_flow += out_flow
-        if set_component_flow(outlet_stream, comp.name, out_flow):
+        if set_component_flow_if_present(outlet_stream, comp.name, out_flow):
             total_flow_set += out_flow
-    
+
     # Add pass-through components (not in reaction sheets)
     for name in inlet_flows:
         if name not in primary_name_map:
@@ -299,16 +316,21 @@ def update_hydrocracking_streams_v2(
                 flow = max(flow, 0.0) if np.isfinite(flow) else 0.0
             outlet_flows[name] = flow
             total_flow += flow
-            if set_component_flow(outlet_stream, name, flow):
+            if set_component_flow_if_present(outlet_stream, name, flow):
                 total_flow_set += flow
-    
-    # Set total flow
-    if total_flow_set > 0.0:
+
+    # Only attempt to set the stream total when all written components are present in the
+    # Aspen outlet stream (i.e. there are no missing components). This avoids
+    # AE_UNDERSPEC/VASetValue errors when Aspen doesn't contain some heavy components.
+    if total_flow_set > 0.0 and not missing_components:
         try:
             sim.STRM_Set_TotalFlowRate(outlet_stream, total_flow_set)
         except Exception as exc:
             print("    ⚠️  Failed to set total outlet flow")
             print(f"    Error: {exc}")
+    else:
+        if missing_components:
+            print(f"    ℹ️  Skipping total flow update because these components are not in outlet stream: {', '.join(sorted(set(missing_components))) }")
 
     if invalid_components:
         invalid_list = ", ".join(sorted(set(invalid_components)))
@@ -323,5 +345,5 @@ def update_hydrocracking_streams_v2(
             "    ⚠️  Skipped components not present in outlet stream: "
             f"{missing_list}"
         )
-    
+
     return outlet_flows
