@@ -27,7 +27,14 @@ REPO_ROOT = os.path.abspath(os.path.join(WORKDIR, "..", "..", ".."))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from CodeLibrary import Simulation
+# Import CodeLibrary robustly (some environments modify sys.path)
+try:
+    from CodeLibrary import Simulation
+except ModuleNotFoundError:
+    if REPO_ROOT not in sys.path:
+        sys.path.insert(0, REPO_ROOT)
+    from CodeLibrary import Simulation
+
 from hydrocracking_v2 import update_hydrocracking_streams_v2
 
 
