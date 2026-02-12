@@ -190,12 +190,58 @@ def run_monte_carlo(cfg: MonteConfig) -> list[Dict[str, object]]:
         # 5) collect outputs
         nap, ker = _get_products(sim, cfg.naphtha_node, cfg.kero_node)
 
-        results.append({"run": i, "ratio": ratio, "co2": co2_flow, "h2": h2_flow, "naphtha": nap, "kero": ker, "status": "ok", "time": timestamp})
+        debug_file_path = None
+        # Capture diagnostics when either product is zero
+        if (nap == 0.0) or (ker == 0.0):
+            try:
+                dbg_lines = []
+                dbg_lines.append(f"Timestamp: {timestamp}")
+                dbg_lines.append(f"run: {i}, ratio: {ratio:.6g}, co2: {co2_flow:.6g}, h2: {h2_flow:.6g}")
+                dbg_lines.append("\n[Stream 5-IN-EXC outputs]")
+                try:
+                    in_out = sim.STRM_GET_OUTPUTS(cfg.inlet_stream)
+                    dbg_lines.append(str(in_out))
+                except Exception as _err:
+                    dbg_lines.append(f"Failed to read {cfg.inlet_stream}: {_err}")
+                dbg_lines.append("\n[Hydrocracker OUT (5-OUTEXC) outputs]")
+                try:
+                    out_out = sim.STRM_GET_OUTPUTS(cfg.outlet_stream)
+                    dbg_lines.append(str(out_out))
+                except Exception as _err:
+                    dbg_lines.append(f"Failed to read {cfg.outlet_stream}: {_err}")
+                dbg_lines.append(f"\n[Product stream outputs: {cfg.naphtha_node.split('.')[-1]}]")
+                try:
+                    prod_out = sim.STRM_GET_OUTPUTS(cfg.naphtha_node.split('.')[-1])
+                    dbg_lines.append(str(prod_out))
+                except Exception as _err:
+                    dbg_lines.append(f"Failed to read product stream: {_err}")
+
+                # Try reading tree nodes for raw values
+                dbg_lines.append("\n[Tree nodes read (best-effort)]")
+                try:
+                    tree = cast(Any, sim).Tree
+                    for node_path in (cfg.co2_node, cfg.h2_node, cfg.naphtha_node, cfg.kero_node):
+                        try:
+                            node = tree.FindNode(node_path)
+                            dbg_lines.append(f"{node_path}: {getattr(node, 'Value', 'N/A')}")
+                        except Exception:
+                            dbg_lines.append(f"{node_path}: node read failed")
+                except Exception:
+                    dbg_lines.append("Tree access failed")
+
+                # Write debug file
+                debug_file_path = project_aspen_dir / f"monte_debug_run_{i}.log"
+                debug_file_path.write_text("\n".join(dbg_lines), encoding="utf-8")
+                print(f"    ⚠️  Debug log written: {debug_file_path}")
+            except Exception as _e:
+                print(f"    ⚠️  Failed to write debug log: {_e}")
+
+        results.append({"run": i, "ratio": ratio, "co2": co2_flow, "h2": h2_flow, "naphtha": nap, "kero": ker, "status": "ok", "time": timestamp, "debug_file": str(debug_file_path) if debug_file_path is not None else ""})
 
     # write results CSV (place in parent Aspen folder)
     out_path = project_aspen_dir / cfg.results_csv
     with out_path.open("w", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=["run", "ratio", "co2", "h2", "naphtha", "kero", "status", "time"])
+        writer = csv.DictWriter(fh, fieldnames=["run", "ratio", "co2", "h2", "naphtha", "kero", "status", "time", "debug_file"])
         writer.writeheader()
         for r in results:
             writer.writerow(r)
