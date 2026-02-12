@@ -116,9 +116,28 @@ def _set_comp_flow(sim: Simulation, stream_id: str, comp_name: str, value: float
 
 
 def _get_products(sim: Simulation, nap_node: str, ker_node: str) -> Tuple[float, float]:
-    nap = _get_comp_flow(sim, nap_node, "NAPHTA")
-    ker = _get_comp_flow(sim, ker_node, "KERO")
-    return (0.0 if nap is None else nap), (0.0 if ker is None else ker)
+    """Return total mole flow for product streams `nap_node` and `ker_node`.
+
+    The product identifiers (e.g. 'Application.Tree.Data.Streams.9-NAPHTA')
+    refer to entire Aspen streams; we sum the MoleFlowList returned by
+    STRM_GET_OUTPUTS(stream_id) to get the stream total.
+    """
+    def _stream_total(stream_node: str) -> float:
+        stream_id = stream_node.split('.')[-1]
+        try:
+            outputs = sim.STRM_GET_OUTPUTS(stream_id)
+            flows = outputs.get("MoleFlowList", [])
+            if isinstance(flows, (list, tuple)):
+                return float(sum(float(f) for f in flows))
+        except Exception:
+            pass
+        # fallback: try reading a single component named like stream (rare)
+        val = _get_comp_flow(sim, stream_node, stream_id)
+        return 0.0 if val is None else float(val)
+
+    nap_total = _stream_total(nap_node)
+    ker_total = _stream_total(ker_node)
+    return nap_total, ker_total
 
 
 # --- main driver -----------------------------------------------------------
