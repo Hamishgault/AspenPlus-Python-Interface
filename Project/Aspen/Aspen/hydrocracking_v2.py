@@ -269,6 +269,7 @@ def update_hydrocracking_streams_v2(
     outlet_flows: Dict[str, float] = {}
     total_flow = 0.0
     missing_components: list[str] = []
+    invalid_components: list[str] = []
 
     def set_component_flow(stream: str, comp_name: str, flow: float) -> None:
         try:
@@ -278,6 +279,9 @@ def update_hydrocracking_streams_v2(
     
     for i, comp in enumerate(primary_comps):
         out_flow = float(secondary_outlet[i])
+        if not np.isfinite(out_flow) or out_flow < 0.0:
+            invalid_components.append(comp.name)
+            out_flow = max(out_flow, 0.0) if np.isfinite(out_flow) else 0.0
         outlet_flows[comp.name] = out_flow
         total_flow += out_flow
         set_component_flow(outlet_stream, comp.name, out_flow)
@@ -286,12 +290,26 @@ def update_hydrocracking_streams_v2(
     for name in inlet_flows:
         if name not in primary_name_map:
             flow = inlet_flows[name]
+            if not np.isfinite(flow) or flow < 0.0:
+                invalid_components.append(name)
+                flow = max(flow, 0.0) if np.isfinite(flow) else 0.0
             outlet_flows[name] = flow
             total_flow += flow
             set_component_flow(outlet_stream, name, flow)
     
     # Set total flow
-    sim.STRM_Set_TotalFlowRate(outlet_stream, total_flow)
+    try:
+        sim.STRM_Set_TotalFlowRate(outlet_stream, total_flow)
+    except Exception as exc:
+        print("    ⚠️  Failed to set total outlet flow")
+        print(f"    Error: {exc}")
+
+    if invalid_components:
+        invalid_list = ", ".join(sorted(set(invalid_components)))
+        print(
+            "    ⚠️  Invalid/negative flows set to 0 for: "
+            f"{invalid_list}"
+        )
 
     if missing_components:
         missing_list = ", ".join(sorted(set(missing_components)))
