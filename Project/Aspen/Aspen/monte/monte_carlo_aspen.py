@@ -41,6 +41,11 @@ if REPO_ROOT is None:
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
+# Also ensure the Project/Aspen/Aspen module directory is on sys.path so local modules import
+MODULE_DIR = str(WORKDIR.parent)  # Project/Aspen/Aspen
+if MODULE_DIR not in sys.path:
+    sys.path.insert(0, MODULE_DIR)
+
 # Import CodeLibrary robustly (some environments modify sys.path)
 try:
     from CodeLibrary import Simulation
@@ -49,7 +54,14 @@ except ModuleNotFoundError:
         sys.path.insert(0, REPO_ROOT)
     from CodeLibrary import Simulation
 
-from hydrocracking_v2 import update_hydrocracking_streams_v2
+# Import local hydrocracker implementation
+try:
+    from hydrocracking_v2 import update_hydrocracking_streams_v2
+except ModuleNotFoundError:
+    # Try importing from module dir explicitly
+    if MODULE_DIR not in sys.path:
+        sys.path.insert(0, MODULE_DIR)
+    from hydrocracking_v2 import update_hydrocracking_streams_v2
 
 
 @dataclass
