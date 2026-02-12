@@ -167,28 +167,39 @@ def run_monte_carlo(cfg: MonteConfig) -> list[Dict[str, object]]:
 
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
 
+        print(f"[Run {i+1}/{cfg.samples}] ratio={ratio:.4f}  — setting feeds CO2={co2_flow:.4f}, H2={h2_flow:.4f}")
+
         # 1) set feed component flows
         ok_co2 = _set_comp_flow(sim, cfg.co2_node.split('.')[-1], "CO2", co2_flow)
         ok_h2 = _set_comp_flow(sim, cfg.h2_node.split('.')[-1], "H2", h2_flow)
         if not ok_co2 or not ok_h2:
+            print(f"    ⚠️  Failed to set feed flows for run {i+1}")
             results.append({"run": i, "ratio": ratio, "co2": co2_flow, "h2": h2_flow, "naphtha": None, "kero": None, "status": "set_feed_failed", "time": timestamp})
             continue
 
+        print("    ▶ Running Aspen (initial)")
         # 2) first Aspen run
         sim.EngineRun()
+        print("    ✅ Aspen initial run complete")
 
         # 3) reconcile hydrocracker (Primary -> Secondary)
+        print("    ▶ Reconciling hydrocracker (Primary -> Secondary)")
         try:
             update_hydrocracking_streams_v2(sim, inlet_stream=cfg.inlet_stream, outlet_stream=cfg.outlet_stream)
+            print("    ✅ Hydrocracker updated")
         except Exception as exc:
+            print(f"    ⚠️  Hydrocracker reconciliation failed: {exc}")
             results.append({"run": i, "ratio": ratio, "co2": co2_flow, "h2": h2_flow, "naphtha": None, "kero": None, "status": f"hydrocracker_failed: {exc}", "time": timestamp})
             continue
 
+        print("    ▶ Running Aspen (post-hydrocracker)")
         # 4) run Aspen again
         sim.EngineRun()
+        print("    ✅ Aspen post-hydrocracker run complete")
 
         # 5) collect outputs
         nap, ker = _get_products(sim, cfg.naphtha_node, cfg.kero_node)
+        print(f"    Results: NAPHTA={nap:.6f}, KERO={ker:.6f}")
 
         debug_file_path = None
         # Capture diagnostics when either product is zero
