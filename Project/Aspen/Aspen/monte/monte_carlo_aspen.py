@@ -23,7 +23,21 @@ from typing import Any, Dict, Tuple, cast
 
 # ensure repo root on sys.path so `from CodeLibrary import Simulation` works
 WORKDIR = Path(__file__).resolve().parent
-REPO_ROOT = os.path.abspath(os.path.join(WORKDIR, "..", "..", ".."))
+# Find repository root by searching upward for CodeLibrary.py (more reliable than fixed relative path)
+_search_dir = WORKDIR
+REPO_ROOT = None
+while True:
+    if (_search_dir / "CodeLibrary.py").exists():
+        REPO_ROOT = str(_search_dir)
+        break
+    if _search_dir.parent == _search_dir:
+        break
+    _search_dir = _search_dir.parent
+
+if REPO_ROOT is None:
+    # fallback to previous relative path
+    REPO_ROOT = os.path.abspath(os.path.join(WORKDIR, "..", "..", "..", ".."))
+
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
