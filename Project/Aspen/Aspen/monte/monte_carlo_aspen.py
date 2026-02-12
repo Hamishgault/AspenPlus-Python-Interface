@@ -17,7 +17,7 @@ import random
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Any, Dict, Tuple, cast
 
 from CodeLibrary import Simulation
 from hydrocracking_v2 import update_hydrocracking_streams_v2
@@ -55,7 +55,8 @@ def _get_comp_flow(sim: Simulation, stream_node: str, comp_name: str) -> float |
         pass
     # fallback: try reading tree node directly (best-effort)
     try:
-        node = sim.Tree.FindNode(stream_node)
+        tree = cast(Any, sim).Tree
+        node = tree.FindNode(stream_node) if getattr(tree, "FindNode", None) is not None else None
         if node is not None:
             return float(node.Value)
     except Exception:
