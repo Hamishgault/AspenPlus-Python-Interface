@@ -70,11 +70,11 @@ CO2_BASE = 38.0
 H2_BASE = 114.820896
 
 # Sampling ranges (multiplier or absolute depending on feed_mode)
-CO2_MULT_RANGE = (0.9, 1.1)         # multiplier range when using multiplier sampling
+CO2_MULT_RANGE = (0.8, 1.2)         # multiplier range when using multiplier sampling
 CO2_ABS_RANGE = (34.2, 41.8)        # absolute-range equivalent (±10%)
 
 # Monte sampling defaults
-MONTE_DEFAULT_SAMPLES = 200
+MONTE_DEFAULT_SAMPLES = 20
 MONTE_DEFAULT_SEED = 7
 
 # Ratio sampling (used when feed_mode == 'preserve_total')
@@ -117,7 +117,7 @@ class MonteConfig:
     naphtha_node: str = "Application.Tree.Data.Streams.9-NAPHTA"
     kero_node: str = "Application.Tree.Data.Streams.9-KERO"
     results_csv: str = "monte_results.csv"
-    visibility: bool = False
+    visibility: bool = True
 
 
 # --- low-level COM helpers -------------------------------------------------
@@ -343,7 +343,7 @@ def run_monte_carlo(cfg: MonteConfig) -> list[Dict[str, object]]:
 if __name__ == "__main__":
     # Default smoke test: keep H2 fixed at the user's baseline and vary CO2 around 38
     cfg = MonteConfig(
-        samples=3,
+        samples=20,
         ratio_mean=1.0,
         ratio_std=0.1,
         feed_mode="fix_h2",
