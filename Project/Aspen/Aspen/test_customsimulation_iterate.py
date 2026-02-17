@@ -11,8 +11,11 @@ if str(_mod_dir) not in sys.path:
     sys.path.insert(0, str(_mod_dir))
 
 _spec = importlib.util.spec_from_file_location('CustomSimualtion', _mod_path)
+assert _spec is not None, f"failed to create module spec for {_mod_path}"
 CustomSimualtion = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(CustomSimualtion)
+_loader = getattr(_spec, 'loader', None)
+assert _loader is not None, 'module spec has no loader'
+_loader.exec_module(CustomSimualtion)
 
 iterate_rstoic_until_converged = CustomSimualtion.iterate_rstoic_until_converged
 
