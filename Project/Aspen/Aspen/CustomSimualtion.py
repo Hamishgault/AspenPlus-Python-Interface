@@ -12,7 +12,7 @@ Usage (examples):
   python CustomSimualtion.py --co 6.6 --apply --save
 
 Behavior
-- Writes the provided CO% into `DATASET_update.xlsm` sheet `RSTOIC!K2` (preserves macros).
+- Writes the provided CO% into `DATASET_update.xlsm` sheet `RSTOIC!K1` (preserves macros).
 - Calls `BLK_Apply_Conversions_From_RSTOIC(...)` to update `FTS-REAC.Input.CONV` from Excel.
 - Runs the Aspen simulation (calls `sim.Run2()`), then calls
   `update_hydrocracking_streams_v2(sim, inlet_stream='5-IN-EXC', outlet_stream='5-OUTEXC')`.
@@ -46,20 +46,19 @@ def write_co_to_rstoic(excel_path: Path, co_value: float) -> None:
 
     - Accepts either a fraction (e.g. 0.066) or a percentage (e.g. 6.6).
     - Values > 1.5 are interpreted as percent and converted to a fraction.
-    - Writes the value into `K1` rounded to two decimal places (e.g. 0.06).
+    - Writes the normalized numeric value into `K1` (no rounding) so precise inputs are preserved.
     - If the workbook is locked by Excel, fall back to using COM to set the cell and save.
     """
     # normalize input: accept fraction (0.066) or percent (6.6) and store as fraction
     val = float(co_value)
     if val > 1.5:
         val = val / 100.0
-    rounded = round(val, 2)
 
     # Prefer openpyxl write (keeps VBA) but fall back to Excel COM if file is locked.
     try:
         wb = openpyxl.load_workbook(excel_path, keep_vba=True)
         ws = wb['RSTOIC']
-        ws['K1'].value = rounded
+        ws['K1'].value = val
         wb.save(excel_path)
         return
     except PermissionError:
@@ -82,7 +81,7 @@ def write_co_to_rstoic(excel_path: Path, co_value: float) -> None:
                 try:
                     wb_xl = excel.Workbooks.Open(str(xl_path), UpdateLinks=False)
                     ws_xl = wb_xl.Worksheets('RSTOIC')
-                    ws_xl.Range('K1').Value = rounded
+                    ws_xl.Range('K1').Value = val
                     wb_xl.Save()
                 finally:
                     if wb_xl is not None:
@@ -111,7 +110,7 @@ def run_for_co(co: float, apply: bool, save: bool, inspect: bool, dry_run: bool)
 
     # 1) write CO% to Excel so RSTOIC conversions are consistent
     write_co_to_rstoic(EXCEL_PATH, co)
-    print(f"Wrote CO%={co} to {EXCEL_PATH} (RSTOIC!K2)")
+    print(f"Wrote CO%={co} to {EXCEL_PATH} (RSTOIC!K1)")
 
     # 2) open Aspen simulation
     sim = Simulation(AspenFileName=str(BKP_PATH), WorkingDirectoryPath=str(BKP_PATH.parent), VISIBILITY=True)
@@ -175,6 +174,126 @@ def run_for_co(co: float, apply: bool, save: bool, inspect: bool, dry_run: bool)
         close_fn = getattr(sim, 'Close', None)
         if callable(close_fn):
             close_fn()
+
+
+def iterate_rstoic_until_converged(
+    sim,
+    co2_feed_stream: str = '1-CO2-MU',
+    reactor_inlet_stream: str = '2-IN-FT',
+    blockname: str = 'FTS-REAC',
+    excel_path: Path | str = EXCEL_PATH,
+    tolerance: float = 1e-5,
+    max_iter: int = 8,
+    dry_run: bool = True,
+    run_after_apply: bool = True,
+    verbose: bool = True,
+):
+    """Iterate RSTOIC <-> Aspen until reactor-inlet CO converges.
+
+    Workflow per iteration:
+    - (assumes CO2 feed already set on `co2_feed_stream`)
+    - run the simulation (so `reactor_inlet_stream` outputs are current)
+    - read CO mole-fraction from `reactor_inlet_stream` (0.0 if missing)
+    - write that CO to `RSTOIC!K1` (preserves precision)
+    - call BLK_Apply_Conversions_From_RSTOIC(..., dry_run=dry_run)
+    - optionally run the simulation again to update streams
+    - repeat until change in CO (between successive iterations) is below `tolerance`
+
+    Returns a dict: { 'co': final_co, 'iterations': n, 'converged': bool, 'last_df': df_or_none }
+    """
+    from pathlib import Path as _Path
+    excel_path = _Path(excel_path)
+
+    def _read_co_from_stream(sid: str) -> float:
+        try:
+            outs = sim.STRM_GET_OUTPUTS(sid)
+            names = outs.get('CompoundNameList', [])
+            moleflows = outs.get('MoleFlowList', [])
+            if not names or not moleflows:
+                return 0.0
+            # prefer explicit CO mole-fraction when available
+            try:
+                idx = [n.upper() for n in names].index('CO')
+                total = sum([float(x) for x in moleflows if x is not None])
+                if total <= 0:
+                    return 0.0
+                co_flow = float(moleflows[idx])
+                return float(co_flow / total)
+            except ValueError:
+                # CO not present in stream components
+                return 0.0
+        except Exception:
+            return 0.0
+
+    prev_co = None
+    last_df = None
+    converged = False
+
+    for it in range(1, max_iter + 1):
+        if verbose:
+            print(f"Iteration {it}/{max_iter}: running simulation to sample reactor inlet CO...")
+
+        # ensure stream outputs are up-to-date
+        try:
+            run_fn = getattr(sim, 'Run2', None)
+            if callable(run_fn):
+                run_fn()
+        except Exception as e:
+            if verbose:
+                print('Warning: sim.Run2() failed:', e)
+
+        co_sample = _read_co_from_stream(reactor_inlet_stream)
+        if verbose:
+            print(f"  sampled CO in '{reactor_inlet_stream}' = {co_sample:.6g}")
+
+        # write sample back to Excel (RSTOIC!K1)
+        try:
+            write_co_to_rstoic(excel_path, co_sample)
+            if verbose:
+                print(f"  Wrote CO={co_sample:.6g} to RSTOIC (for conversion interp)")
+        except Exception as e:
+            print('Error: failed to write CO to RSTOIC:', e)
+            break
+
+        # apply/preview conversions from RSTOIC
+        try:
+            last_df = BLK_Apply_Conversions_From_RSTOIC(sim, blockname, excel_path=str(excel_path), dry_run=dry_run, save_after=False)
+            if verbose:
+                print(f"  BLK_Apply_Conversions_From_RSTOIC returned {len(last_df) if last_df is not None else 0} rows (dry_run={dry_run})")
+        except Exception as e:
+            print('Warning: BLK_Apply_Conversions_From_RSTOIC failed during iteration:', e)
+            last_df = None
+
+        # if we're applying conversions (dry_run==False) or explicitly told to re-run,
+        # run the sim so stream values update before the next sample
+        if run_after_apply:
+            try:
+                run_fn = getattr(sim, 'Run2', None)
+                if callable(run_fn):
+                    run_fn()
+            except Exception as e:
+                if verbose:
+                    print('Warning: sim.Run2() after applying conversions failed:', e)
+
+        # read new CO and check convergence
+        new_co = _read_co_from_stream(reactor_inlet_stream)
+        if verbose:
+            print(f"  post-update CO in '{reactor_inlet_stream}' = {new_co:.6g}")
+
+        if prev_co is not None:
+            delta = abs(new_co - prev_co)
+            if verbose:
+                print(f"  change since last iter = {delta:.6g} (tol={tolerance})")
+            if delta <= tolerance:
+                converged = True
+                if verbose:
+                    print('Converged — change below tolerance')
+                prev_co = new_co
+                break
+
+        prev_co = new_co
+
+    return {'co': float(prev_co) if prev_co is not None else 0.0, 'iterations': it, 'converged': converged, 'last_df': last_df}
 
 
 if __name__ == '__main__':
