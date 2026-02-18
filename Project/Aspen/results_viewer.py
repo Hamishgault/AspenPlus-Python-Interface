@@ -88,34 +88,79 @@ def view_results(csv_path: Path, out_dir: Path, bins: int = 20, show_plots: bool
 
     df = pd.read_csv(csv_path)
 
-    # detect CO column (common names: 'co', 'x_co')
+    # detect reactor CO (mole-fraction) column (common names: 'co', 'x_co', 'CO', 'CO%')
     co_col = None
     for candidate in ['co', 'x_co', 'CO', 'CO%']:
         if candidate in df.columns:
             co_col = candidate
             break
+
+    # attempt to extract reactor CO from the text _rstoic_iter cell if present
     if co_col is None:
-        # fallback: look for a numeric column with values inside 0..1
+        for rcol in ['_rstoic_iter', 'rstoic_iter', 'rstoic']:
+            if rcol in df.columns:
+                import re
+
+                def _extract_co_from_rstoic_cell(s):
+                    if s is None or (isinstance(s, float) and pd.isna(s)):
+                        return None
+                    txt = str(s)
+                    m = re.search(r"['\"]co['\"]\s*:\s*([0-9eE+\-.]+)", txt)
+                    if m:
+                        try:
+                            return float(m.group(1))
+                        except Exception:
+                            return None
+                    return None
+
+                df['_rstoic_co'] = df[rcol].apply(_extract_co_from_rstoic_cell)
+                if df['_rstoic_co'].notna().any():
+                    co_col = '_rstoic_co'
+                    break
+
+    # fallback: look for a numeric column with values inside 0..1 (mole fraction)
+    if co_col is None:
         for c in df.columns:
             if pd.api.types.is_numeric_dtype(df[c]):
                 vals = df[c].dropna()
                 if not vals.empty and vals.between(0, 1).all():
                     co_col = c
                     break
+
+    # detect CO2 feed column (use for scatter x-axis and separate histogram)
+    feed_col = None
+    for candidate in ['CO2', 'co2', 'CO_2', 'Co2']:
+        if candidate in df.columns:
+            feed_col = candidate
+            break
+
+    # Report / plot reactor CO if available
     if co_col is None:
-        print("No CO column detected in CSV — skipping CO histogram.")
+        print("No reactor-CO column detected in CSV — skipping CO histogram.")
     else:
         ser = df[co_col].dropna().astype(float)
-        _print_summary('CO', ser)
+        _print_summary('CO (reactor inlet mole fraction)', ser)
         print('\nCO ASCII histogram:')
         for ln in _ascii_hist(ser.to_numpy(), bins=bins, width=50):
             print(ln)
         png = out_dir / 'co_hist.png'
-        plot_and_save_hist(ser.to_numpy(), 'CO', png, bins=bins, xlabel='CO (mole fraction)')
+        plot_and_save_hist(ser.to_numpy(), 'CO (reactor inlet mole fraction)', png, bins=bins, xlabel='CO (mole fraction)')
         print(f"Saved CO histogram to: {png}")
 
-    # detect product columns: numeric columns excluding co/run/status/debug fields
-    exclude = {co_col, 'run_index', 'status', 'debug_file', None}
+    # Report / plot CO2 feed if available
+    if feed_col is not None:
+        ser_feed = pd.to_numeric(df[feed_col].dropna(), errors='coerce')
+        if not ser_feed.empty:
+            _print_summary('CO2 feed', ser_feed)
+            print('\nCO2 feed ASCII histogram:')
+            for ln in _ascii_hist(ser_feed.to_numpy(), bins=bins, width=50):
+                print(ln)
+            png = out_dir / 'co2_hist.png'
+            plot_and_save_hist(ser_feed.to_numpy(), 'CO2 feed', png, bins=bins, xlabel='CO2 (kmol/hr)')
+            print(f"Saved CO2 histogram to: {png}")
+
+    # detect product columns: numeric columns excluding CO (reactor mole-fraction), CO2 feed, run/status/debug fields
+    exclude = {co_col, feed_col, 'run_index', 'status', 'debug_file', None}
     product_cols = [c for c in df.columns if c not in exclude and pd.api.types.is_numeric_dtype(df[c])]
 
     if not product_cols:
@@ -124,8 +169,6 @@ def view_results(csv_path: Path, out_dir: Path, bins: int = 20, show_plots: bool
 
     print('\nDetected product columns: ' + ', '.join(product_cols))
     for c in product_cols:
-        if c == co_col:
-            continue
         ser = df[c].dropna().astype(float)
 
         # determine pretty title + units for known products
@@ -136,6 +179,9 @@ def view_results(csv_path: Path, out_dir: Path, bins: int = 20, show_plots: bool
         elif 'naph' in low or 'nap' in low:
             pretty = 'Naphtha Product'
             xlabel_unit = 'Naphtha Product (kmol/hr)'
+        elif 'co2' in low:
+            pretty = 'CO2 feed'
+            xlabel_unit = 'CO2 (kmol/hr)'
         else:
             pretty = c.capitalize()
             xlabel_unit = f"{pretty} (kmol/hr)"
@@ -148,20 +194,29 @@ def view_results(csv_path: Path, out_dir: Path, bins: int = 20, show_plots: bool
         plot_and_save_hist(ser.to_numpy(), pretty, png, bins=bins, xlabel=xlabel_unit)
         print(f"Saved {c} histogram to: {png}")
 
-        # scatter vs CO if CO exists
+        # scatter vs reactor CO if available
         if co_col is not None and co_col in df.columns:
             try:
-                xvals = df[co_col].dropna().astype(float)
-                # align lengths by dropping NA pairs
                 paired = df[[co_col, c]].dropna()
                 if not paired.empty:
                     x = paired[co_col].astype(float).to_numpy()
                     y = paired[c].astype(float).to_numpy()
-                    scatter_name = 'co_vs_' + c
-                    scatter_png = out_dir / f'{scatter_name}.png'
-                    plot_title = f"CO vs {pretty}"
-                    plot_and_save_scatter(x, y, plot_title, 'CO (mole fraction)', xlabel_unit, scatter_png)
+                    scatter_png = out_dir / f'co_vs_{c}.png'
+                    plot_and_save_scatter(x, y, f"CO vs {pretty}", 'CO (mole fraction)', xlabel_unit, scatter_png)
                     print(f"Saved scatter plot: {scatter_png}")
+            except Exception:
+                pass
+
+        # scatter vs CO2 feed if available
+        if feed_col is not None and feed_col in df.columns:
+            try:
+                paired2 = df[[feed_col, c]].dropna()
+                if not paired2.empty:
+                    x2 = paired2[feed_col].astype(float).to_numpy()
+                    y2 = paired2[c].astype(float).to_numpy()
+                    scatter_png2 = out_dir / f'{feed_col}_vs_{c}.png'
+                    plot_and_save_scatter(x2, y2, f"CO2 feed vs {pretty}", 'CO2 (kmol/hr)', xlabel_unit, scatter_png2)
+                    print(f"Saved scatter plot: {scatter_png2}")
             except Exception:
                 pass
 

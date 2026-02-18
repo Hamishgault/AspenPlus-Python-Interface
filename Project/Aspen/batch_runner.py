@@ -59,7 +59,7 @@ from CodeLibrary import Simulation
 from Aspen.AspenTester import BLK_Apply_Conversions_From_RSTOIC
 from Aspen.hydrocracking_v2 import update_hydrocracking_streams_v2
 # reuse Excel helper from CustomSimualtion.py (inside Aspen subpackage)
-from Aspen.CustomSimualtion import write_co_to_rstoic
+from Aspen.CustomSimualtion import write_co_to_rstoic, iterate_rstoic_until_converged
 
 
 DEFAULT_BKP = "FTS Alessio_CO_conv_Ref_20bar_11%.bkp"
@@ -83,6 +83,8 @@ class BatchConfig:
     results_csv: str = DEFAULT_RESULTS_CSV
     hydrocracker: bool = True
     save_each: bool = False
+    # If True, iterate RSTOIC <-> reactor inlet after setting CO2 and apply conversions
+    iterate_rstoic: bool = True
 
 
 class BatchRunner:
@@ -170,8 +172,12 @@ class BatchRunner:
         ker = _stream_total('9-KERO')
         return {"naphtha": nap, "kero": ker}
 
-    def run_case(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def run_case(self, params: Dict[str, Any], apply_rstoic: bool = False) -> Dict[str, Any]:
         """Apply `params` then run and return dict of inputs+outputs.
+
+        If `apply_rstoic` is True and `CO2` is present in `params`, the method will
+        call the RSTOIC ↔ reactor-inlet iteration (apply conversions) and then
+        run hydrocracker/collect product totals.
 
         Supported params (best-effort):
           - 'CO2' : Absolute CO2 component mole flow in kmol/hr (e.g. 38.0). BatchRunner writes this to `1-CO2-MU` using `STRM_Set_ComponentFlowRate` (component-driven feed).
@@ -313,6 +319,31 @@ class BatchRunner:
                                     continue
                 except Exception as e:
                     res[f"_warn_set_{comp}"] = str(e)
+
+        # 3.5) optional: if CO2 provided and caller requested, iterate RSTOIC ↔ reactor inlet
+        # (applies conversions via Excel interpolation) and then run hydrocracker + collect outputs
+        if apply_rstoic and 'CO2' in params and params['CO2'] is not None:
+            try:
+                iter_res = iterate_rstoic_until_converged(
+                    self.sim,
+                    co2_feed_stream='1-CO2-MU',
+                    reactor_inlet_stream='2-IN-FT',
+                    blockname=self.cfg.blockname,
+                    dry_run=False,
+                    run_after_apply=True,
+                    verbose=False,
+                )
+            except Exception as e:
+                res['_error_rstoic_iter'] = str(e)
+            else:
+                res['_rstoic_iter'] = iter_res
+
+                # run hydrocracker & collect product totals (best-effort)
+                try:
+                    prod_res = self._run_and_collect()
+                    res.update(prod_res)
+                except Exception as e:
+                    res['_error_collect'] = str(e)
         # 4) optional save
         if self.cfg.save_each:
             try:
@@ -330,7 +361,9 @@ class BatchRunner:
         results: List[Dict[str, Any]] = []
         for i, co2 in enumerate(co2_list):
             print(f"[Run {i+1}/{len(co2_list)}] CO2={co2} kmol/hr")
-            row = self.run_case({'CO2': co2})
+            # perform the full workflow for CO2 sweeps (iterate RSTOIC, apply conversions,
+            # run hydrocracker and collect product outputs)
+            row = self.run_case({'CO2': co2}, apply_rstoic=True)
             row['CO2'] = co2
             row['run_index'] = i
             results.append(row)
@@ -361,7 +394,13 @@ class BatchRunner:
                         params[k] = v
 
                 print(f"[Run {i+1}] params={params}")
-                out = self.run_case(params)
+                # if CSV row provides CO2 (component flow) or co (mole-fraction),
+                # run the full workflow to converge CO% and apply conversions
+                apply_rstoic = False
+                if 'CO2' in params or 'co' in params:
+                    apply_rstoic = True
+
+                out = self.run_case(params, apply_rstoic=apply_rstoic)
                 out['run_index'] = i
                 out.update(params)
                 results.append(out)
@@ -397,6 +436,7 @@ if __name__ == '__main__':
     p.add_argument('--bkp', type=str, default=None, help='Alternate .bkp filename/path')
     p.add_argument('--visibility', action='store_true', help='Open Aspen with visible UI')
     p.add_argument('--no-hydro', dest='hydro', action='store_false', help='Do not run hydrocracker reconciliation')
+    p.add_argument('--no-rstoic', dest='rstoic', action='store_false', help='Do not iterate RSTOIC ↔ reactor-inlet to converge CO%')
     p.add_argument('--save-each', action='store_true', help='Call sim.Save() after each case')
     args = p.parse_args()
 
@@ -404,6 +444,7 @@ if __name__ == '__main__':
         bkp_name=args.bkp if args.bkp is not None else DEFAULT_BKP,
         visibility=args.visibility,
         hydrocracker=args.hydro,
+        iterate_rstoic=args.rstoic,
         save_each=args.save_each,
         results_csv=args.out,
     )

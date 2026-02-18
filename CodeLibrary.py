@@ -4007,6 +4007,33 @@ class Simulation():
         }
         return Dictionary
 
+    def TREE_Get_Node_Value(self, node_path: str):
+        """Return the `.Value` stored at an Aspen Tree node identified by its full path.
+
+        Example:
+          sim.TREE_Get_Node_Value(r"\Data\Blocks\CARBFLO\Output\Prop Data\ANALPROP\PROP-1")
+
+        Args:
+            node_path: Full Tree path string as accepted by `Tree.FindNode`.
+        Returns:
+            The node.Value (type depends on the property stored in Aspen).
+        Raises:
+            KeyError if the Tree node cannot be found.
+            RuntimeError for other COM-related failures.
+        """
+        try:
+            tree = getattr(self.AspenSimulation, 'Tree', None)
+            if tree is None:
+                raise RuntimeError('AspenSimulation.Tree is not available on this Simulation instance')
+            node = tree.FindNode(node_path)
+            if node is None:
+                raise KeyError(f"Tree node not found: {node_path}")
+            return node.Value
+        except KeyError:
+            raise
+        except Exception as e:
+            raise RuntimeError(f"TREE_Get_Node_Value failed for '{node_path}': {e}") from e
+
 
 
 

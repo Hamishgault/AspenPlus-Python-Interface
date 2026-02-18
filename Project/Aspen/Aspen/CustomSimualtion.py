@@ -225,6 +225,22 @@ def iterate_rstoic_until_converged(
         except Exception:
             return 0.0
 
+    # helper to run the Aspen simulation in a few compatible ways
+    # (try sim.Run2, sim.EngineRun, then sim.AspenSimulation.Run2)
+    def _run_sim_once():
+        for fn in (
+            getattr(sim, 'Run2', None),
+            getattr(sim, 'EngineRun', None),
+            getattr(getattr(sim, 'AspenSimulation', None), 'Run2', None),
+        ):
+            if callable(fn):
+                try:
+                    fn()
+                    return True
+                except Exception:
+                    continue
+        return False
+
     prev_co = None
     last_df = None
     converged = False
@@ -234,13 +250,7 @@ def iterate_rstoic_until_converged(
             print(f"Iteration {it}/{max_iter}: running simulation to sample reactor inlet CO...")
 
         # ensure stream outputs are up-to-date
-        try:
-            run_fn = getattr(sim, 'Run2', None)
-            if callable(run_fn):
-                run_fn()
-        except Exception as e:
-            if verbose:
-                print('Warning: sim.Run2() failed:', e)
+        _run_sim_once()
 
         co_sample = _read_co_from_stream(reactor_inlet_stream)
         if verbose:
@@ -267,13 +277,7 @@ def iterate_rstoic_until_converged(
         # if we're applying conversions (dry_run==False) or explicitly told to re-run,
         # run the sim so stream values update before the next sample
         if run_after_apply:
-            try:
-                run_fn = getattr(sim, 'Run2', None)
-                if callable(run_fn):
-                    run_fn()
-            except Exception as e:
-                if verbose:
-                    print('Warning: sim.Run2() after applying conversions failed:', e)
+            _run_sim_once()
 
         # read new CO and check convergence
         new_co = _read_co_from_stream(reactor_inlet_stream)

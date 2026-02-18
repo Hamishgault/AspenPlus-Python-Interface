@@ -1,0 +1,15 @@
+H2O_feed,H2O_over_C,CO_pct_pre_reactor,kerosene_mass_flow,naphtha_mass_flow,rstoic_converged,rstoic_iterations,rstoic_co,_rstoic_iter,_error
+1999.0,2.25824727,7.15100529,1.2000044799779126,1210.5475390571962,True,4,0.07151005285378542,"{'co': 0.07151005285378542, 'iterations': 4, 'converged': True, 'last_df':      reaction  requested   applied
+0           2   0.001669  0.001669
+1           3   0.003567  0.003567
+2           4   0.014590  0.014590
+3           5   0.002363  0.002363
+4           6   0.021933  0.021933
+..        ...        ...       ...
+128       132   0.003001  0.003001
+129       133   0.002788  0.002788
+130       134   0.002728  0.002728
+131       135   0.002463  0.002463
+132       136   0.002167  0.002167
+
+[133 rows x 3 columns]}",
