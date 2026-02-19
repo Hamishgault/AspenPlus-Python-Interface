@@ -26,3 +26,32 @@ def test_stream_total_falls_back_to_mole():
             return {'MoleFlowList': [1.5, 0.5]}
     runner.sim = FakeSim2()
     assert _h2o.H2OSweepRunner._stream_total(runner, 'any') == 2.0
+
+
+def test_run_case_includes_mole_flow_keys():
+    # ensure run_case exposes mole-flow keys when _stream_details provides them
+    runner = object.__new__(_h2o.H2OSweepRunner)
+
+    class FakeSim3:
+        def STRM_Set_ComponentFlowRate(self, *a, **k):
+            pass
+        def EngineRun(self):
+            pass
+        def STRM_GET_OUTPUTS(self, sid):
+            if sid == runner.cfg.kero_node if hasattr(runner, 'cfg') else '9-KERO':
+                return {'MassFlowList': [1.0], 'MoleFlowList': [0.5], 'CompoundNameList': ['C1']}
+            if sid == runner.cfg.naphtha_node if hasattr(runner, 'cfg') else '9-NAPHTA':
+                return {'MassFlowList': [2.0], 'MoleFlowList': [1.0], 'CompoundNameList': ['C1']}
+            if sid == '2-IN-FT':
+                return {'CompoundNameList': ['CO'], 'MoleFracList': [0.01], 'MoleFlowList': [0.1]}
+            return {}
+
+    runner.sim = FakeSim3()
+    # minimal cfg required by run_case
+    runner.cfg = _h2o.H2OSweepConfig(bkp_name='FTS copy.bkp', visibility=False)
+
+    out = _h2o.H2OSweepRunner.run_case(runner, 1500.0, apply_rstoic=False)
+    assert 'kerosene_mole_flow' in out
+    assert 'naphtha_mole_flow' in out
+    assert out['kerosene_mole_flow'] == 0.5
+    assert out['naphtha_mole_flow'] == 1.0

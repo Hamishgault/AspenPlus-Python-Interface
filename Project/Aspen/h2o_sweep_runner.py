@@ -528,6 +528,9 @@ class H2OSweepRunner:
             # follow user's required key names (explicitly _mass_flow suffix) but record type
             res['kerosene_mass_flow'] = ker
             res['naphtha_mass_flow'] = nap
+            # also store mole-flow totals (kmol/hr) when available so units are explicit
+            res['kerosene_mole_flow'] = kero_details.get('mole_total')
+            res['naphtha_mole_flow'] = nap_details.get('mole_total')
             res['kero_flow_type'] = kero_type
             res['naphtha_flow_type'] = nap_type
 
@@ -580,7 +583,7 @@ class H2OSweepRunner:
         df_out = df[CSV_COLUMNS].copy()
 
         # append helpful debug columns (kept after the required columns)
-        for dbg in ('rstoic_converged', 'rstoic_iterations', 'rstoic_co', '_rstoic_iter', '_error', 'kero_flow_type', 'naphtha_flow_type'):
+        for dbg in ('rstoic_converged', 'rstoic_iterations', 'rstoic_co', '_rstoic_iter', '_error', 'kero_flow_type', 'naphtha_flow_type', 'kerosene_mole_flow', 'naphtha_mole_flow'):
             if dbg in df.columns:
                 df_out[dbg] = df[dbg]
             else:
