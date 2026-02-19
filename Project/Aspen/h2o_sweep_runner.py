@@ -235,6 +235,8 @@ class H2OSweepRunner:
         Always safe to call for diagnostic printing; returns None-valued totals
         when the corresponding lists are absent or when a COM error occurs.
         """
+        # narrow type for the language server / type checker
+        assert self.sim is not None
         try:
             outs = self.sim.STRM_GET_OUTPUTS(stream_id)
         except Exception:
