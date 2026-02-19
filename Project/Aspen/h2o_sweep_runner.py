@@ -114,6 +114,8 @@ class H2OSweepConfig:
     iterate_rstoic: bool = True
     results_csv: str = DEFAULT_OUTNAME
     save_each: bool = False
+    # when True, print progress and diagnostic info to the terminal
+    verbose: bool = True
 
 
 class H2OSweepRunner:
@@ -192,7 +194,11 @@ class H2OSweepRunner:
 
     # --- low-level helpers -------------------------------------------------
     def _stream_total(self, stream_id: str) -> Optional[float]:
-        """Best-effort total moleflow read from a stream (mirrors batch_runner behavior)."""
+        """Best-effort total flow read from a stream.
+
+        Prefers `MassFlowList` (mass units) when available; falls back to
+        `MoleFlowList` (molar units) otherwise. Returns None on read errors.
+        """
         assert self.sim is not None
         try:
             outs = self.sim.STRM_GET_OUTPUTS(stream_id)
@@ -222,6 +228,39 @@ class H2OSweepRunner:
             return float(x)
         except Exception:
             return None
+
+    def _stream_details(self, stream_id: str) -> Dict[str, Any]:
+        """Return details about a stream (mass/mole totals and raw outputs).
+
+        Always safe to call for diagnostic printing; returns None-valued totals
+        when the corresponding lists are absent or when a COM error occurs.
+        """
+        try:
+            outs = self.sim.STRM_GET_OUTPUTS(stream_id)
+        except Exception:
+            return {'mass_total': None, 'mole_total': None, 'raw': None}
+
+        mass = None
+        mole = None
+        mlist = outs.get('MassFlowList')
+        if isinstance(mlist, (list, tuple)):
+            try:
+                mass = float(sum(float(x) for x in mlist))
+            except Exception:
+                mass = None
+        elif isinstance(mlist, (int, float)):
+            mass = float(mlist)
+
+        flist = outs.get('MoleFlowList')
+        if isinstance(flist, (list, tuple)):
+            try:
+                mole = float(sum(float(x) for x in flist))
+            except Exception:
+                mole = None
+        elif isinstance(flist, (int, float)):
+            mole = float(flist)
+
+        return {'mass_total': mass, 'mole_total': mole, 'raw': outs}
 
     def _get_component_flow_from_outputs(self, outs: Dict[str, Any], comp_name: str) -> Optional[float]:
         """Return component mole flow (kmol/hr) if available from STRM_GET_OUTPUTS outputs."""
@@ -476,9 +515,35 @@ class H2OSweepRunner:
             # product totals (use same aggregation logic as batch_runner)
             ker = self._stream_total(self.cfg.kero_node)
             nap = self._stream_total(self.cfg.naphtha_node)
-            # follow user's required key names (explicitly _mass_flow suffix)
+
+            # determine which list supplied the values and add diagnostic flags
+            kero_details = self._stream_details(self.cfg.kero_node)
+            nap_details = self._stream_details(self.cfg.naphtha_node)
+
+            kero_type = 'mass' if kero_details.get('mass_total') is not None else ('mole' if kero_details.get('mole_total') is not None else 'none')
+            nap_type = 'mass' if nap_details.get('mass_total') is not None else ('mole' if nap_details.get('mole_total') is not None else 'none')
+
+            # follow user's required key names (explicitly _mass_flow suffix) but record type
             res['kerosene_mass_flow'] = ker
             res['naphtha_mass_flow'] = nap
+            res['kero_flow_type'] = kero_type
+            res['naphtha_flow_type'] = nap_type
+
+            # terminal notifications for suspicious magnitudes
+            try:
+                if self.cfg.verbose:
+                    print(f"  [STREAM] {self.cfg.kero_node}: flow={ker!r} (type={kero_type})")
+                    print(f"  [STREAM] {self.cfg.naphtha_node}: flow={nap!r} (type={nap_type})")
+
+                if ker is not None and nap is not None and ker > 0:
+                    ratio = nap / ker
+                    if ratio > 100 or ratio < 0.01:
+                        print("  ⚠️  Suspicious product ratio detected: naphtha/kerosene =", ratio)
+                        print("  → Dumping raw STRM_GET_OUTPUTS for debugging:")
+                        print(f"    {self.cfg.kero_node} ->", kero_details['raw'])
+                        print(f"    {self.cfg.naphtha_node} ->", nap_details['raw'])
+            except Exception:
+                pass
         except Exception as e:
             res['_error'] = f"collect_failed: {e}"
 
@@ -513,7 +578,7 @@ class H2OSweepRunner:
         df_out = df[CSV_COLUMNS].copy()
 
         # append helpful debug columns (kept after the required columns)
-        for dbg in ('rstoic_converged', 'rstoic_iterations', 'rstoic_co', '_rstoic_iter', '_error'):
+        for dbg in ('rstoic_converged', 'rstoic_iterations', 'rstoic_co', '_rstoic_iter', '_error', 'kero_flow_type', 'naphtha_flow_type'):
             if dbg in df.columns:
                 df_out[dbg] = df[dbg]
             else:
@@ -630,6 +695,7 @@ if __name__ == '__main__':
     p.add_argument('--no-hydro', dest='hydro', action='store_false', help='Do not run hydrocracker reconciliation')
     p.add_argument('--no-rstoic', dest='rstoic', action='store_false', help='Do not attempt RSTOIC iteration')
     p.add_argument('--save-each', action='store_true', help='Call sim.Save() after each case')
+    p.add_argument('--verbose', action='store_true', help='Print progress and diagnostics to the terminal')
 
     # Interactive prompt when the script is run without arguments (TTY required)
     def _interactive_build_argv(parser: argparse.ArgumentParser) -> list:
@@ -696,6 +762,7 @@ if __name__ == '__main__':
         iterate_rstoic=args.rstoic,
         save_each=args.save_each,
         results_csv=DEFAULT_OUTNAME,
+        verbose=args.verbose,
     )
 
     runner = H2OSweepRunner(cfg)
