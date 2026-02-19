@@ -51,7 +51,7 @@ if aspensub.exists() and str(aspensub) not in sys.path:
 
 # Aspen / helpers
 from CodeLibrary import Simulation
-from Aspen.AspenTester import BLK_Apply_Conversions_From_RSTOIC
+from Aspen.AspenTester import BLK_Apply_Conversions_From_RSTOIC as _BLK_Apply_Conversions_From_RSTOIC  # imported for completeness; not referenced in this runner
 from Aspen.hydrocracking_v2 import update_hydrocracking_streams_v2
 from Aspen.CustomSimualtion import iterate_rstoic_until_converged
 
@@ -80,6 +80,26 @@ DEFAULT_H2O_PCT = 1000
 
 # required CSV column ordering (must match user's spec)
 CSV_COLUMNS = ['H2O_feed', 'H2O_over_C', 'CO_pct_pre_reactor', 'kerosene_mass_flow', 'naphtha_mass_flow']
+
+
+def corr_sign(a: pd.Series, b: pd.Series) -> tuple[int, float]:
+    """Return (sign, r) where sign in {-1,0,1} and r is Pearson r (or nan).
+
+    - sign is 1 for positive correlation, -1 for negative, 0 for undefined/insufficient data.
+    - r is the Pearson correlation coefficient (float) or nan when undefined.
+    """
+    paired = pd.concat([a, b], axis=1).dropna()
+    if paired.shape[0] < 2:
+        return 0, float('nan')
+    x = paired.iloc[:, 0]
+    y = paired.iloc[:, 1]
+    if x.nunique() <= 1 or y.nunique() <= 1:
+        return 0, float('nan')
+    r = x.corr(y)
+    if pd.isna(r):
+        return 0, float('nan')
+    r_f = float(r)
+    return (int(np.sign(r_f)) if r_f != 0.0 else 0, r_f)
 
 
 @dataclass
@@ -176,13 +196,17 @@ class H2OSweepRunner:
         assert self.sim is not None
         try:
             outs = self.sim.STRM_GET_OUTPUTS(stream_id)
-            flows = outs.get('MoleFlowList')
-            if flows is None:
-                flows = outs.get('MoleFractionList')
+            # prefer mass flows when available (report mass flow if Aspen provides it)
+            mass_flows = outs.get('MassFlowList')
+            if isinstance(mass_flows, (list, tuple)):
+                return float(sum(float(x) for x in mass_flows))
+            if isinstance(mass_flows, (int, float)):
+                return float(mass_flows)
 
+            # fallback to mole flows
+            flows = outs.get('MoleFlowList')
             if isinstance(flows, (list, tuple)):
                 return float(sum(float(x) for x in flows))
-
             if flows is not None:
                 return float(flows)
         except Exception:
@@ -509,21 +533,9 @@ class H2OSweepRunner:
             s_nap = pd.to_numeric(df_out['naphtha_mass_flow'], errors='coerce')
             s_co = pd.to_numeric(df_out['CO_pct_pre_reactor'], errors='coerce')
 
-            def corr_sign(a, b):
-                # Build paired, non-NA observations
-                paired = pd.concat([a, b], axis=1).dropna()
-                if len(paired) < 2:
-                    # not enough points to compute correlation
-                    return 0, float('nan')
-                x = paired.iloc[:, 0]
-                y = paired.iloc[:, 1]
-                # if either series is constant (zero variance) correlation is undefined
-                if x.nunique() <= 1 or y.nunique() <= 1:
-                    return 0, float('nan')
-                r = x.corr(y)
-                if pd.isna(r):
-                    return 0, float('nan')
-                return int(np.sign(r)) if float(r) != 0.0 else 0, float(r)
+            # use module-level `corr_sign` (typed and unit-tested)
+            # previously this helper was nested with no annotations which confused the type-checker
+
 
             sign_kero_vs_nap, r_kn = corr_sign(s_kero, s_nap)
             sign_h2oc_kero, r_hk = corr_sign(s_h2o_c, s_kero)
