@@ -1,5 +1,5 @@
 """
-Load Monte Carlo outputs and visualize electrolyzer LCOH sensitivity.
+Load Monte Carlo outputs and visualize electrolyser LCOH sensitivity.
 """
 
 from pathlib import Path
@@ -65,9 +65,11 @@ def _plot_tornado(pairs, metric):
 
     colors = np.where(values >= 0, "#4c72b0", "#c44e52")
     fig, ax = plt.subplots(figsize=(8, 0.4 * len(labels) + 2))
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
     ax.barh(labels, values, color=colors)
     ax.set_xlabel("Correlation")
-    ax.set_title(f"Electrolyzer Sensitivity: {metric}")
+    ax.set_title(f"Electrolyser Sensitivity: {metric}")
     ax.axvline(0, color="#333333", linewidth=0.8)
     plt.tight_layout()
     plt.show()
@@ -108,7 +110,7 @@ def display_electrolyzer_results(output_dir, show_plot=True):
         "EE",
     ]
 
-    print("\nElectrolyzer LCOH Summary")
+    print("\nElectrolyser LCOH Summary")
     stats = _percentiles(df[metric])
     print("LCOH_total p10/p50/p90:", stats.get("p10"), stats.get("p50"), stats.get("p90"))
 
@@ -116,7 +118,7 @@ def display_electrolyzer_results(output_dir, show_plot=True):
     if pairs:
         rows = [{"Variable": name, "corr": float(corr), "abs_corr": float(abs(corr))} for name, corr in pairs]
         table = pd.DataFrame(rows)
-        print("\nElectrolyzer Sensitivity (Correlation)")
+        print("\nElectrolyser Sensitivity (Correlation)")
         print(table.to_string(index=False))
 
     if show_plot:

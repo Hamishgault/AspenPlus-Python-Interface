@@ -130,8 +130,8 @@ def run_monte_carlo(
     base_overhead = model.get_scalar(base_data, "plant", "Overhead")
     base_manutenzione = model.get_scalar(base_data, "plant", "Manutenzione")
     base_use = float(base_data["we"][2].item())
-    base_eff = float(base_data["we_matrix"][1, 1].item())
-    base_stack_life = float(base_data["we_matrix"][3, 1].item())
+    base_specific_energy = float(base_data["we_matrix"][1, 1].item())
+    base_stack_life = float(base_data["we_matrix"][2, 1].item())
 
     rows: List[Dict[str, float]] = []
     progress_step = max(1, n_samples // 10)
@@ -200,11 +200,11 @@ def run_monte_carlo(
             data_i,
             1,
             1,
-            float(base_eff * sample_trunc_normal(rng, 1.0, 0.1, *ELECTROLYZER_EFF_MULT_RANGE)),
+            float(base_specific_energy * sample_trunc_normal(rng, 1.0, 0.1, *ELECTROLYZER_EFF_MULT_RANGE)),
         )
         set_we_matrix_value(
             data_i,
-            3,
+            2,
             1,
             float(base_stack_life * sample_trunc_normal(rng, 1.0, 0.1, *STACK_LIFE_MULT_RANGE)),
         )
@@ -234,8 +234,8 @@ def run_monte_carlo(
             "ETS2": model.get_scalar(data_i, "real", "ETS2"),
             "CAPEX": model.get_scalar(data_i, "plant", "CAPEX"),
             "ReFuel": np.nan if compute_bep else refuel_value,
-            "Electrolyzer_eff": float(data_i["we_matrix"][1, 1]),
-            "Stack_life": float(data_i["we_matrix"][3, 1]),
+            "Electrolyzer_eff": float(39.0 / (float(data_i["we_matrix"][1, 1]) + float(data_i["we_matrix"][2, 1]) / 2000.0 * float(data_i["we_matrix"][3, 1]) * float(data_i["we_matrix"][1, 1]))),
+            "Stack_life": float(data_i["we_matrix"][2, 1]),
             "CO2_capture_cost": model.get_scalar(data_i, "real", "CC"),
             "OPEX_mult": opex_mult,
             "WACC": model.get_scalar(data_i, "econ", "WACC"),

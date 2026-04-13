@@ -3,5 +3,6 @@ numpy
 matplotlib
 pandas
 scipy
+scikit-learn
 openpyxl
 numpy-financial
