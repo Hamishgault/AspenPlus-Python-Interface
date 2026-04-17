@@ -1,5 +1,6 @@
+import argparse
 from csv import DictReader
-from math import isnan
+from math import isnan, sqrt
 from pathlib import Path
 from statistics import median, variance
 
@@ -9,7 +10,7 @@ LABELS = {
     "BRENT": "Brent crude price",
     "ETS1": "ETS scenario 1",
     "ETS2": "ETS scenario 2",
-    "CAPEX": "Capital expenditure (kEUR)",
+    "CAPEX": "Capital expenditure (EUR)",
     "ReFuel": "ReFuel price",
     "Electrolyzer_eff": "Electrolyser efficiency",
     "Stack_life": "Stack lifetime",
@@ -44,7 +45,7 @@ INPUT_COLUMNS = [
 OUTPUT_COLUMNS = ["BEP", "IRR", "VAN", "err", "LCOH_total"]
 
 SCALES = {
-    "CAPEX": 1e-3,
+    "CAPEX": 1e3,
 }
 
 
@@ -67,14 +68,14 @@ def load_numeric_columns(csv_path: Path) -> dict[str, list[float]]:
     return columns
 
 
-def build_table(df: dict[str, list[float]]) -> str:
+def build_table(df: dict[str, list[float]], run_mode: str) -> str:
     lines: list[str] = []
     lines.append(r"\begin{table}[htbp]")
     lines.append(r"  \centering")
     lines.append(r"  \small")
     lines.append(r"  \begin{tabular}{lrr}")
     lines.append(r"    \toprule")
-    lines.append(r"    Variable & Median & Variance \\")
+    lines.append(r"    Variable & Median & Standard deviation \\")
     lines.append(r"    \midrule")
 
     for title, columns in (("Sampled inputs", INPUT_COLUMNS), ("Outputs", OUTPUT_COLUMNS)):
@@ -84,28 +85,32 @@ def build_table(df: dict[str, list[float]]) -> str:
             series = [value * scale for value in df[column]]
             med = median(series) if len(series) else float("nan")
             var = variance(series) if len(series) > 1 else float("nan")
-            lines.append(
-                f"    {LABELS[column]} & {fmt(med)} & {fmt(var)} \\\\")
+            std = sqrt(var) if not isnan(var) else float("nan")
+            lines.append(f"    {LABELS[column]} & {fmt(med)} & {fmt(std)} " + r"\\")
         if title == "Sampled inputs":
             lines.append(r"    \midrule")
 
     lines.append(r"    \bottomrule")
     lines.append(r"  \end{tabular}")
     lines.append(
-        r"  \caption{Median and sample variance for the economic Monte Carlo variables, based on the normal run results. Variance is reported in squared units.}"
+        rf"  \caption{{Median and sample standard deviation for the economic Monte Carlo variables, based on the {run_mode} run results.}}"
     )
-    lines.append(r"  \label{tab:economic-monte-carlo-variables}")
+    lines.append(rf"  \label{{tab:economic-monte-carlo-variables-{run_mode}}}")
     lines.append(r"\end{table}")
     return "\n".join(lines) + "\n"
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", choices=["normal", "bep"], default="normal")
+    args = parser.parse_args()
+
     root = Path(__file__).resolve().parent
-    csv_path = root / "outputs" / "economics_esaf" / "monte_carlo" / "normal" / "monte_carlo_results.csv"
-    out_path = root / "outputs" / "economics_esaf" / "monte_carlo" / "normal" / "monte_carlo_variables_table.tex"
+    csv_path = root / "outputs" / "economics_esaf" / "monte_carlo" / args.mode / "monte_carlo_results.csv"
+    out_path = root / "outputs" / "economics_esaf" / "monte_carlo" / args.mode / "monte_carlo_variables_table.tex"
 
     df = load_numeric_columns(csv_path)
-    table = build_table(df)
+    table = build_table(df, args.mode)
     out_path.write_text(table, encoding="utf-8")
     print(out_path)
 

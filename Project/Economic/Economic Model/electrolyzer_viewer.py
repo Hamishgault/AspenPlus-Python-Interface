@@ -103,8 +103,6 @@ def display_electrolyzer_results(output_dir, show_plot=True):
 
     metric = "LCOH_total"
     input_cols = [
-        "Electrolyzer_eff",
-        "Stack_life",
         "Utilization",
         "H2_compr_energy",
         "EE",

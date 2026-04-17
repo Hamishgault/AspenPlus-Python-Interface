@@ -21,7 +21,6 @@ BRENT_MULT_RANGE = (0.9, 1.1)
 ETS1_MULT_RANGE = (0.9, 1.1)
 ETS2_MULT_RANGE = (0.9, 1.1)
 CAPEX_MULT_RANGE = (0.9, 1.1)
-ELECTROLYZER_EFF_MULT_RANGE = (0.9, 1.1)
 STACK_LIFE_MULT_RANGE = (0.9, 1.1)
 CO2_CAPTURE_COST_MULT_RANGE = (0.9, 1.1)
 OPEX_MULT_RANGE = (0.9, 1.1)
@@ -130,7 +129,6 @@ def run_monte_carlo(
     base_overhead = model.get_scalar(base_data, "plant", "Overhead")
     base_manutenzione = model.get_scalar(base_data, "plant", "Manutenzione")
     base_use = float(base_data["we"][2].item())
-    base_specific_energy = float(base_data["we_matrix"][1, 1].item())
     base_stack_life = float(base_data["we_matrix"][2, 1].item())
 
     rows: List[Dict[str, float]] = []
@@ -196,12 +194,6 @@ def run_monte_carlo(
         use_i = min(max(use_i, 0.0), 1.0)
         set_we_value(data_i, 2, use_i)
 
-        set_we_matrix_value(
-            data_i,
-            1,
-            1,
-            float(base_specific_energy * sample_trunc_normal(rng, 1.0, 0.1, *ELECTROLYZER_EFF_MULT_RANGE)),
-        )
         set_we_matrix_value(
             data_i,
             2,
@@ -272,7 +264,6 @@ def run_monte_carlo(
             "ETS1_MULT": ETS1_MULT_RANGE,
             "ETS2_MULT": ETS2_MULT_RANGE,
             "CAPEX_MULT": CAPEX_MULT_RANGE,
-            "ELECTROLYZER_EFF_MULT": ELECTROLYZER_EFF_MULT_RANGE,
             "STACK_LIFE_MULT": STACK_LIFE_MULT_RANGE,
             "CO2_CAPTURE_COST_MULT": CO2_CAPTURE_COST_MULT_RANGE,
             "OPEX_MULT": OPEX_MULT_RANGE,
